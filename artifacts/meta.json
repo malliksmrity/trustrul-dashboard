@@ -1,0 +1,34 @@
+{
+  "best": {
+    "arch": "gru",
+    "win": 30,
+    "dropout": 0.3,
+    "loss": "mse",
+    "norm": "standard"
+  },
+  "seed": 42,
+  "rul_cap": 125,
+  "win": 30,
+  "keep_sensors": [
+    "sensor_2",
+    "sensor_3",
+    "sensor_4",
+    "sensor_7",
+    "sensor_8",
+    "sensor_9",
+    "sensor_11",
+    "sensor_12",
+    "sensor_13",
+    "sensor_14",
+    "sensor_15",
+    "sensor_17",
+    "sensor_20",
+    "sensor_21"
+  ],
+  "review_threshold_band": 40.1,
+  "n_flagged": 25,
+  "test_rmse": 13.47,
+  "test_score": 354,
+  "mc_passes": 50,
+  "ci": "5th-95th percentile (90%)"
+}

@@ -1,0 +1,13 @@
+arch,win,dropout,loss,norm,sensors,mc,val_RMSE,val_score,mean_unc
+gru,30,0.3,mse,standard,all,20,11.69,3652,9.78
+gru,30,0.2,mse,standard,all,20,11.84,4074,7.92
+gru,30,0.4,mse,standard,all,20,12.57,3890,12.07
+lstm,30,0.3,mse,standard,all,20,12.94,4363,9.78
+gru,30,0.3,mse,standard,corr,20,13.03,5062,9.87
+lstm,20,0.3,mse,standard,all,20,14.68,8340,9.47
+lstm,30,0.3,asym,standard,all,20,14.94,4680,9.05
+cnn_attn,30,0.3,mse,minmax,all,20,15.63,8484,10.2
+cnn_attn,30,0.3,asym,standard,all,20,21.02,13431,11.1
+cnn_attn,30,0.3,mse,standard,all,20,22.31,25157,10.87
+cnn_attn,40,0.3,mse,standard,all,20,23.65,29307,11.03
+cnn_attn,40,0.4,asym,standard,all,50,27.09,26502,11.94
