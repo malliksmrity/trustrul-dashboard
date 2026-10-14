@@ -46,6 +46,12 @@
     <figcaption><b>Chart 4.</b> The 25 engines with the widest range were sent to a human reviewer. Their average error is not larger than for the other 75. So in this test the flag did not pick out the worst predictions, although a wider range does go with larger error to some extent (rank correlation 0.31).</figcaption>
   </figure>
 
+  <h2>Look up one engine</h2>
+  <div class="callout">
+    <label for="eng">Test engine: </label><select id="eng"></select>
+    <p id="engout" style="margin:12px 0 0"></p>
+  </div>
+
   <h2>How it works</h2>
   <ol class="steps">
     <li>The model reads the last 30 cycles of 14 sensor channels for an engine.</li>
@@ -110,6 +116,13 @@
     data: { labels: ['Sent to a human (25)', 'Handled automatically (75)'],
             datasets: [{ data: [D.checks.mean_abs_err_flagged, D.checks.mean_abs_err_auto], backgroundColor: [accent, grey] }] },
     options: Object.assign({ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'Average absolute error (cycles)' } } } }, opts) });
+  var sel = document.getElementById('eng');
+  D.engines.forEach(function (e) { var o = document.createElement('option'); o.value = e.engine; o.textContent = 'Engine ' + e.engine; sel.appendChild(o); });
+  function show() {
+    var e = D.engines.filter(function (x) { return String(x.engine) === sel.value; })[0];
+    document.getElementById('engout').textContent = 'Predicted ' + e.pred_RUL.toFixed(0) + ' cycles left (90% range ' + e.CI90_low.toFixed(0) + ' to ' + e.CI90_high.toFixed(0) + '). True value ' + e.true_RUL.toFixed(0) + '. Error ' + e.abs_err.toFixed(1) + '. Main sensors: ' + e.top_sensors + '. ' + (e.review === 'HUMAN' ? 'Sent to a human reviewer.' : 'Handled automatically.');
+  }
+  sel.addEventListener('change', show); show();
 })();
 </script>
 </body>
