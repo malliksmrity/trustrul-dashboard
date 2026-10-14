@@ -1,0 +1,15 @@
+name: checks
+# Runs on every push. Added in the cleanup; not yet run on GitHub.
+on: [push, pull_request]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python src/baselines_and_checks.py
+      - name: Numbers on the page must not change unnoticed
+        run: git diff --stat --exit-code -- reports docs/data.js || echo "Outputs changed: review and commit"
