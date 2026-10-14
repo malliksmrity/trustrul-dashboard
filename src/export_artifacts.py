@@ -1,7 +1,7 @@
 """Reproduce the notebook's best model (§6) and freeze everything the dashboard
-needs into app/artifacts/ .  Run once (CPU, ~4 min):
+needs into artifacts/ .  Run once (CPU, ~4 min):
 
-    ./.venv/Scripts/python.exe app/export_artifacts.py
+    python src/export_artifacts.py
 
 Outputs
 -------
@@ -22,8 +22,8 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 
 HERE = Path(__file__).parent
-ART = HERE / "artifacts"; ART.mkdir(exist_ok=True)
-DATA = HERE.parent / "data"          # repo root /data with the C-MAPSS txt files
+ART = HERE.parent / "artifacts"; ART.mkdir(exist_ok=True)
+DATA = HERE.parent / "data"          # repo-root data/ with the C-MAPSS txt files
 
 import trustrul_core as tc
 
