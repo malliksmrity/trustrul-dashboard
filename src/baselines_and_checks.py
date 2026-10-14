@@ -77,7 +77,7 @@ def main():
     page = {
         "baselines": rows, "checks": checks,
         "experiments": exp[["arch", "win", "dropout", "loss", "norm", "sensors", "val_RMSE"]].to_dict("records"),
-        "engines": rec[["engine", "pred_RUL", "CI90_low", "CI90_high", "true_RUL", "abs_err", "review"]].to_dict("records"),
+        "engines": rec[["engine", "pred_RUL", "CI90_low", "CI90_high", "true_RUL", "abs_err", "review", "top_sensors"]].to_dict("records"),
     }
     (ROOT / "docs" / "data.js").write_text("window.PAGE_DATA = " + json.dumps(page) + ";\n", encoding="utf-8")
     print(pd.DataFrame(rows).to_string(index=False)); print(checks)
