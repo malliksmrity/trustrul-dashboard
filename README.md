@@ -43,6 +43,15 @@ The baselines are an addition: they train on the same 80 engines as the notebook
 - The "90 percent" range contained the true value for 82 of 100 engines. It is a bit too narrow.
 - The 25 engines flagged for human review have an average error of 9.46 cycles. The 75 others have 10.12. So the flag did not isolate the worst predictions in this test. The width of the range and the error are positively related (Spearman 0.31).
 
+**Calibrated range, explanations, tracking (added in the second cleanup round)**
+
+`python src/conformal_shap_mlflow.py` (needs `requirements-extra.txt`; reports in `reports/conformal_shap.json`):
+
+- Split conformal prediction on the gradient-boosting baseline, calibrated on the 20 validation engines: the 90 percent range has half-width 29.8 cycles and covers 89 of 100 test engines (the GRU's saved range: 82). The result is uncertain by about 3 points. It applies to the baseline. Doing the same for the GRU needs retraining it first (not done).
+- SHAP (TreeExplainer) on the baseline: sensors 11, 9 and 4 contribute most on average.
+- The run is logged with MLflow to a local SQLite file (`mlflow.db`, git-ignored). View with `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
+- A model card with an EU AI Act note is in `reports/MODEL_CARD.md`. The note says the notebook's high-risk claim is unverified.
+
 ## Limitations
 
 - Simulated data, a single operating condition and fault type, 100 test engines only.
