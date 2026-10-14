@@ -1,0 +1,3 @@
+# To retrain the GRU (src/export_artifacts.py). The saved results need only requirements.txt.
+-r requirements.txt
+tensorflow==2.21.0
