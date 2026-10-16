@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MaintenanceSimEnv | When should an engine be pulled?</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  select { max-width: 100%; }
+  .stage { position: relative; width: 100%; height: 380px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: #0c1116; }
+  .stage canvas.gl { display: block; width: 100%; height: 100%; touch-action: none; }
+  .hud { position: absolute; left: 10px; top: 10px; font-size: 13px; line-height: 1.5; color: #e9eff2; background: rgba(10,14,18,.78); padding: 8px 10px; border-radius: 4px; pointer-events: none; max-width: 92%; }
+  .hud b { color: #6fd3e1; } .bad { color: #ff6b5e; font-weight: 600; } .ok { color: #6fe39a; font-weight: 600; } .warn { color: #f0b84a; font-weight: 600; }
+  .ctl { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); } .ctl > div { min-width: 0; } .ctl select { width: 100%; } @media (min-width: 700px) { .ctl { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .gauges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; } .gauge { border-left: 3px solid var(--accent); padding-left: 8px; font-size: 13px; color: var(--muted); } .gauge b { display: block; font: 600 22px Georgia, serif; color: var(--text); }
+  @media (max-width: 560px) { .hud { font-size: 11px; padding: 5px 7px; } .stage { height: 320px; } .gauge b { font-size: 17px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><span>Smrity Mallik &middot; Simulation</span><a href="https://github.com/malliksmrity/trustrul-dashboard" target="_blank" rel="noopener">Code on GitHub</a></div>
+  <p class="kicker">Simulation environment &middot; predictive maintenance</p>
+  <h1>MaintenanceSimEnv: when should an engine be pulled from service?</h1>
+  <p class="lead">A fleet of real run-to-failure engines (NASA C-MAPSS, simulated engines with recorded sensor histories). Each prediction comes from a model that never saw that engine. Pull early and you waste life. Run to failure and you pay the failure cost. Everything below updates live when you change a control.</p>
+  <p class="note">Failure cost is an assumption (default 150 cycles of life). Score = 1 &minus; cost / failure cost; the hindsight optimum pulls one cycle before failure. Fan speed and vibration in the 3D views are illustrations; the sensor traces, predictions and lives are real data.</p>
+  <noscript><p class="callout">This simulation needs JavaScript and WebGL.</p></noscript>
+
+  <h2>1. Controls</h2>
+  <div class="callout">
+    <div class="ctl">
+      <div><label for="eng">First engine (record): <b id="engv">1</b></label><br><input id="eng" type="range" min="1" max="100" value="1" style="width:100%"></div>
+      <div><label for="neng">Engines on the aircraft: <b id="nv">2</b></label><br><input id="neng" type="range" min="1" max="4" value="2" style="width:100%"></div>
+      <div><label for="n1">Fan speed N1: <b id="n1v">100</b> % (design 2,388 rpm)</label><br><input id="n1" type="range" min="20" max="120" value="100" style="width:100%"></div>
+      <div><label for="fc">Failure cost: <b id="fcv">150</b> cycles of life</label><br><input id="fc" type="range" min="50" max="400" step="10" value="150" style="width:100%"></div>
+      <div><label for="pol">Policy</label><br><select id="pol"><option value="pt">Point estimate: pull when predicted life is at most N</option><option value="lb">Lower end of the range: pull when the lower bound is at most N</option><option value="fx">Fixed interval: pull at cycle 4 x N</option></select></div>
+      <div><label for="thr">N = <b id="thrv">8</b></label><br><input id="thr" type="range" min="0" max="40" value="8" style="width:100%"></div>
+    </div>
+    <div class="row"><label><input id="auto" type="checkbox"> Apply the policy to every engine on the aircraft</label></div>
+  </div>
+
+  <h2>2. The aircraft</h2>
+  <p>Each engine is a different real record, and they age together. An engine spins faster and shakes as its predicted life shrinks, stops and burns when it fails, and glows green with a ring when it has been pulled. Fan speed N1 scales all fans.</p>
+  <div class="stage" id="fleet"><div class="hud" id="fhud"></div></div>
+  <div class="callout">
+    <label for="cyc">Cycle: <b id="cycv">1</b></label><br><input id="cyc" type="range" min="1" max="192" value="1" style="width:100%">
+    <div class="row"><button id="cplay" class="btn">Play</button><button id="cpause" class="btn">Pause</button><label>Speed <select id="spd"><option value="1">1x</option><option value="2" selected>2x</option><option value="5">5x</option></select></label></div>
+  </div>
+  <figure><div class="box" style="height:300px"><canvas id="chA" role="img" aria-label="Predicted remaining life of every engine over the cycles"></canvas></div><figcaption><b>Live chart 1.</b> Predicted remaining life of each engine up to the current cycle. The dashed line is the policy threshold N. The chart draws itself as the cycle advances.</figcaption></figure>
+  <figure><div class="box" style="height:250px"><canvas id="chB" role="img" aria-label="Cost if each engine is pulled now"></canvas></div><figcaption><b>Live chart 2.</b> What it would cost to pull each engine <i>right now</i>: the remaining life it would waste, or the failure cost if it already failed. Green = pulled, red = failed.</figcaption></figure>
+
+  <h2>3. One engine up close</h2>
+  <p>Pick which engine to inspect. The fan, the air through the bypass (blue-white) and through the core (heated by the real outlet-temperature sensor), and the hot section all follow the controls above.</p>
+  <label for="sel">Look closer at</label> <select id="sel"></select>
+  <div class="stage" id="stage" style="margin-top:10px"><div class="hud" id="hud"></div></div>
+  <div class="gauges"><div class="gauge"><b id="gN">100 %</b>fan speed N1<br><span id="gRpm"></span></div><div class="gauge"><b id="gV">0.5</b>vibration index (illustration)</div><div class="gauge"><b id="gT">0.5</b>hot-section heat index (real sensor T50 plus N1)</div></div>
+  <figure><div class="box" style="height:240px"><canvas id="chD" role="img" aria-label="Live rolling gauges"></canvas></div><figcaption><b>Live chart 3.</b> The last 30 seconds of fan speed, vibration and heat index as you move the controls. Try pushing N1 above 105 %: the blade tips turn red and the vibration climbs.</figcaption></figure>
+  <figure><div class="box" style="height:280px"><canvas id="chC" role="img" aria-label="Real sensor traces of the inspected engine"></canvas></div><figcaption><b>Live chart 4, real data.</b> Three sensors of the inspected engine, up to the current cycle, each scaled to its own range: LPT outlet temperature, HPC outlet pressure and the fuel-flow ratio. They drift as the engine wears.</figcaption></figure>
+  <figure><div class="box" style="height:200px"><canvas id="chS" role="img" aria-label="Fan speed sensor"></canvas></div><figcaption><b>Live chart 5, real data.</b> The recorded fan speed sensor (rpm) of the inspected engine. It barely moves (2,387.9 to 2,388.6 in the whole data set) because all engines ran at one fixed operating point. The N1 slider above shows what would change if the speed were different.</figcaption></figure>
+
+  <h2>4. Play it yourself</h2>
+  <div class="callout">
+    <label for="pull">Pull the inspected engine at cycle: <b id="pullv">100</b></label><br><input id="pull" type="range" min="30" max="362" value="100" style="width:100%">
+    <p id="res" style="margin:12px 0 0"></p>
+  </div>
+  <figure><div class="box" style="height:280px"><canvas id="chE" role="img" aria-label="Cost against the cycle at which the engine is pulled"></canvas></div><figcaption><b>Live chart 6.</b> The cost of pulling this engine at each possible cycle. The cost is the waste before the engine fails, and the failure cost afterwards. The dot is your choice; the sharp cliff is the engine's real end of life, which the agent cannot see.</figcaption></figure>
+
+  <h2>5. How the policy does on all 100 engines</h2>
+  <p id="pres"></p>
+  <figure><div class="box" style="height:280px"><canvas id="chF" role="img" aria-label="Life wasted per engine for the chosen policy"></canvas></div><figcaption><b>Live chart 7.</b> Every engine, sorted: life wasted when the policy pulled it (blue) or a red bar at the failure cost when it failed. Moves with the policy and N.</figcaption></figure>
+  <figure><div class="box" style="height:260px"><canvas id="chG" role="img" aria-label="Engines that fail against the threshold"></canvas></div><figcaption><b>Live chart 8.</b> Engines that fail (of 100) as the threshold falls. The point-estimate rule is safe down to about 8 cycles. The marker shows your N.</figcaption></figure>
+
+  <h2>6. Scores computed in Python</h2>
+  <p class="note">Failure cost 150 (<code>simulation/evaluate_policies.py</code>).</p>
+  <div class="tablewrap"><table id="tbl"><thead><tr><th>Policy</th><th>Failures</th><th>Mean wasted cycles</th><th>Mean score</th></tr></thead><tbody></tbody></table></div>
+
+  <footer>Data: NASA Prognostics Center of Excellence, C-MAPSS FD001 (Saxena and Goebel, 2008). Predictions made out-of-fold. Not for real maintenance decisions. Part of the TrustRUL project.</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const $ = id => document.getElementById(id), D = window.SIM, SENS = D.sensors, clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const css = getComputedStyle(document.documentElement), accent = css.getPropertyValue('--accent').trim(), grey = css.getPropertyValue('--grey').trim(), text = css.getPropertyValue('--text').trim(), line = css.getPropertyValue('--line').trim();
+Chart.defaults.color = text; Chart.defaults.borderColor = line; Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
+const COLORS = ['#4cc2d3', '#f0b84a', '#b07cf0', '#6fe39a'];
+const MIN_CYCLE = 30;
+
+// ---------------- policy logic (same rules as simulation/maintenance_env.py) ----------------
+const eng = id => D.engines[id], life = id => eng(id).p.length;
+function policyPull(e, kind, N) { for (let c = 1; c <= e.p.length; c++) { if (c < MIN_CYCLE) continue; const i = c - 1; if (kind === 'pt' && e.p[i] <= N) return c; if (kind === 'lb' && e.l[i] <= N) return c; if (kind === 'fx' && c >= 4 * N) return c; } return e.p.length; }
+function grade(p, fc, n) { if (p >= n) return { outcome: 'failed', cost: fc, wasted: 0, score: 0 }; return { outcome: 'pulled', cost: n - p, wasted: n - p, score: Math.max(0, 1 - (n - p) / fc) }; }
+const ST = { n: 2, cycle: 1, auto: false, sel: 0, playing: null, n1: 1.0, fc: 150 };
+const ids = () => { const b = +$('eng').value; return Array.from({ length: ST.n }, (_, k) => ((b - 1 + k * 17) % 100) + 1); };
+function stateOf(id, c) {
+  const e = eng(id), n = life(id); let pullAt = null;
+  if (ST.auto) { const p = policyPull(e, $('pol').value, +$('thr').value); if (p < n) pullAt = p; }
+  const at = (cc, status) => ({ status, c: cc, pred: e.p[cc - 1], lo: e.l[cc - 1], hi: e.h[cc - 1], left: n - cc });
+  if (pullAt !== null && c >= pullAt) return at(pullAt, 'pulled');
+  if (c >= n) return at(n, 'failed');
+  return at(c, 'running');
+}
+
+// ---------------- three.js helpers ----------------
+function makeStage(el, camPos, target, fit) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.domElement.className = 'gl'; el.insertBefore(renderer.domElement, el.firstChild);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0c1116);
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200), controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(...target); camera.position.set(...camPos);
+  scene.add(new THREE.AmbientLight(0x8899aa, 0.85)); const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(6, 12, 9); scene.add(sun);
+  const S = { renderer, scene, camera, controls, moved: false };
+  controls.addEventListener('start', () => { S.moved = true; });
+  const resize = () => { const w = el.clientWidth, h = el.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); if (!S.moved) fit(S); };
+  new ResizeObserver(resize).observe(el); S.resize = resize; return S;
+}
+const metal = (c, o = 1) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.65, roughness: 0.4, transparent: o < 1, opacity: o, side: THREE.DoubleSide });
+function healthColor(p) { const t = 1 - clamp(p / 100, 0, 1); const c = new THREE.Color(); c.setHSL(0.36 * (1 - t), 0.85, 0.42); return c; }
+
+function makeEngine(scale, withFlow) {
+  const g = new THREE.Group(), u = {};
+  u.nacMat = metal(0x9aa5ae, 0.35);
+  const nac = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 1.9, 6.4, 40, 1, true), u.nacMat); nac.rotation.z = Math.PI / 2; nac.position.x = 0.4; g.add(nac);
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.12, 10, 40), metal(0xc3ccd3)); lip.rotation.y = Math.PI / 2; lip.position.x = -2.8; g.add(lip);
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.75, 4.6, 28), metal(0x6f7b85)); core.rotation.z = Math.PI / 2; core.position.x = 1.3; g.add(core);
+  u.hotMat = new THREE.MeshStandardMaterial({ color: 0x2f6b4a, emissive: 0x1f8a55, emissiveIntensity: 1.1, metalness: 0.5, roughness: 0.4 });
+  const hot = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.62, 1.5, 28), u.hotMat); hot.rotation.z = Math.PI / 2; hot.position.x = 3.1; g.add(hot);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.62, 1.5, 28), metal(0x4a5560)); cone.rotation.z = -Math.PI / 2; cone.position.x = 4.55; g.add(cone);
+  const hub = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.9, 20), metal(0xd7dde2)); hub.rotation.z = Math.PI / 2; hub.position.x = -2.9; g.add(hub);
+  u.fan = new THREE.Group(); u.fan.position.x = -2.2; g.add(u.fan); u.blades = [];
+  for (let i = 0; i < 20; i++) { const mat = metal(0xcfd6dc), b = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.5, 0.42), mat); const a = i / 20 * Math.PI * 2; b.position.set(0, Math.cos(a) * 1.25, Math.sin(a) * 1.25); b.rotation.x = -a; b.rotation.y = 0.5; u.fan.add(b); u.blades.push(mat); }
+  u.ring = new THREE.Mesh(new THREE.TorusGeometry(2.55, 0.07, 8, 56), new THREE.MeshBasicMaterial({ color: 0x6fe39a, transparent: true, opacity: 0 })); u.ring.rotation.y = Math.PI / 2; u.ring.position.x = 0.4; g.add(u.ring);
+  u.light = new THREE.PointLight(0x1f8a55, 10, 9); u.light.position.set(3.1, 0, 0); g.add(u.light);
+  const N = 90, pos = new Float32Array(N * 3), seed = new Float32Array(N); for (let i = 0; i < N; i++) seed[i] = Math.random();
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  u.smoke = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x3a3a3a, size: 0.55, transparent: true, opacity: 0, depthWrite: false })); u.smoke.frustumCulled = false; g.add(u.smoke); u.pos = pos; u.seed = seed;
+  if (withFlow) {  // air through the bypass duct and through the core
+    const mk = (n, col, size) => { const p = new Float32Array(n * 3), c = new Float32Array(n * 3), sd = new Float32Array(n * 3); for (let i = 0; i < n * 3; i++) sd[i] = Math.random(); const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.BufferAttribute(p, 3)); gg.setAttribute('color', new THREE.BufferAttribute(c, 3)); const pt = new THREE.Points(gg, new THREE.PointsMaterial({ size, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending })); pt.frustumCulled = false; g.add(pt); return { p, c, sd, g: gg, n, col }; };
+    u.bypass = mk(420, 0xbfe6ff, 0.12); u.coreflow = mk(260, 0xff8a40, 0.14);
+  }
+  g.scale.setScalar(scale); return { g, u, spinAngle: 0 };
+}
+// st: { status, pred, hot } ; N1 as fraction; returns vibration index and heat index for the HUD
+function updateEngine(E, st, N1, dt, now) {
+  const u = E.u, over = N1 > 1.05;
+  const col = st.status === 'failed' ? new THREE.Color(0xff2a1a) : st.status === 'pulled' ? new THREE.Color(0x35c46f) : healthColor(st.pred);
+  u.hotMat.color.copy(col).multiplyScalar(0.45); u.hotMat.emissive.copy(col); u.light.color.copy(col); u.light.intensity = st.status === 'failed' ? 26 + 8 * Math.sin(now / 90) : 10 * (0.6 + 0.4 * N1);
+  u.ring.material.opacity = st.status === 'pulled' ? 0.9 : 0;
+  const stress = st.status === 'running' ? clamp(1 - st.pred / 60, 0, 1) : st.status === 'failed' ? 1 : 0;
+  const spin = st.status === 'running' ? 9 * N1 * (1 + 2.2 * stress) : st.status === 'pulled' ? 1.2 * N1 : 0;
+  E.spinAngle += dt * spin; u.fan.rotation.x = E.spinAngle;
+  const vib = st.status === 'failed' ? 4 : 0.5 * N1 * N1 * (0.4 + 1.6 * stress) * (over ? 1.8 : 1), shake = 0.012 * vib;
+  E.g.position.y = E.baseY + Math.sin(now / 38 + E.phase) * shake * E.g.scale.x; E.g.position.z = E.baseZ + Math.cos(now / 45 + E.phase) * shake * 0.6 * E.g.scale.x;
+  u.nacMat.color.set(st.status === 'failed' ? 0xb03a2e : 0x9aa5ae); u.nacMat.opacity = st.status === 'failed' ? 0.55 : 0.35;
+  u.blades.forEach(m => m.color.set(over && st.status === 'running' ? 0xff6b5e : 0xcfd6dc));
+  u.smoke.material.opacity = st.status === 'failed' ? 0.8 : 0;
+  if (st.status === 'failed') { for (let i = 0; i < u.seed.length; i++) { const k = (now / 1600 + u.seed[i]) % 1; u.pos[i * 3] = 4.2 + k * 3.2; u.pos[i * 3 + 1] = 0.3 + k * 2.4 + Math.sin(i) * 0.3; u.pos[i * 3 + 2] = Math.sin(i * 7.3) * 0.7 * (0.3 + k); } u.smoke.geometry.attributes.position.needsUpdate = true; }
+  if (u.bypass) {  // flow speed follows N1; the core stream is heated by the real temperature sensor and by N1
+    const run = st.status !== 'failed' ? (st.status === 'pulled' ? 0.15 : 1) : 0.05, sp = N1 * run, hotIdx = clamp(st.hot * 0.7 + 0.25 * (N1 - 0.6), 0, 1), t = now / 1000;
+    const B = u.bypass; for (let i = 0; i < B.n; i++) { const k = (t * 0.55 * sp + B.sd[i * 3]) % 1, th = B.sd[i * 3 + 1] * 6.283 + k * 0.4, r = 1.15 + B.sd[i * 3 + 2] * 0.75; B.p[i * 3] = -3.4 + k * 9.2; B.p[i * 3 + 1] = Math.cos(th) * r; B.p[i * 3 + 2] = Math.sin(th) * r; const a = 0.5 + 0.5 * Math.min(1, sp); B.c[i * 3] = 0.6 * a; B.c[i * 3 + 1] = 0.85 * a; B.c[i * 3 + 2] = 1.0 * a; }
+    const C = u.coreflow; for (let i = 0; i < C.n; i++) { const k = (t * 0.7 * sp + C.sd[i * 3]) % 1, th = C.sd[i * 3 + 1] * 6.283, r = C.sd[i * 3 + 2] * 0.62 * (1 - 0.3 * k); C.p[i * 3] = -2.3 + k * 8.4; C.p[i * 3 + 1] = Math.cos(th) * r; C.p[i * 3 + 2] = Math.sin(th) * r; const heat = clamp(k * 1.3 * (0.4 + hotIdx), 0, 1), c = new THREE.Color().setHSL(0.62 - 0.62 * heat, 1, 0.45 + 0.2 * heat); C.c[i * 3] = c.r; C.c[i * 3 + 1] = c.g; C.c[i * 3 + 2] = c.b; }
+    B.g.attributes.position.needsUpdate = true; B.g.attributes.color.needsUpdate = true; C.g.attributes.position.needsUpdate = true; C.g.attributes.color.needsUpdate = true;
+  }
+  return { vib, heat: clamp(st.hot * 0.7 + 0.25 * (N1 - 0.6) + 0.15 * stress, 0, 1) };
+}
+const hotOf = (id, c) => { const s = SENS.engines[id].s4, r = SENS.range.s4; return clamp((s[Math.min(c, s.length) - 1] - r[0]) / (r[1] - r[0]), 0, 1); };
+
+// ---------------- aircraft ----------------
+const A = makeStage($('fleet'), [-4, 9, 22], [0, 0, 0], S => { const d = Math.max(20, 12.5 / (Math.tan(THREE.MathUtils.degToRad(S.camera.fov / 2)) * S.camera.aspect)); S.camera.position.set(-d * 0.35, 5 + d * 0.28, d); S.controls.target.set(0, 0, 0); S.controls.update(); });
+{ const gr = new THREE.GridHelper(60, 60, 0x2a3a46, 0x1a2630); gr.position.y = -3.2; A.scene.add(gr);
+  const body = new THREE.Group(); A.scene.add(body);
+  const fus = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 12, 32), metal(0xe3e8ec)); fus.rotation.z = Math.PI / 2; body.add(fus);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(1.15, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), metal(0xe3e8ec)); nose.rotation.z = Math.PI / 2; nose.position.x = -6; body.add(nose);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(1.15, 4, 32), metal(0xe3e8ec)); tail.rotation.z = -Math.PI / 2; tail.position.x = 8; body.add(tail);
+  const ws = new THREE.Shape(); ws.moveTo(0, 0); ws.lineTo(3.2, 0); ws.lineTo(1.2, 9); ws.lineTo(-0.2, 9); ws.lineTo(-1.6, 0);
+  for (const sgn of [1, -1]) { const wg = new THREE.ExtrudeGeometry(ws, { depth: 0.16, bevelEnabled: false }); wg.rotateX(Math.PI / 2); const w = new THREE.Mesh(wg, metal(0xc9d1d7)); w.scale.z = sgn; w.position.set(0.2, -0.45, sgn * 0.9); body.add(w); }
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(2.6, 3.2, 0.14), metal(0xc9d1d7)); fin.position.set(7.4, 1.9, 0); fin.rotation.z = 0.35; body.add(fin);
+  for (const sgn of [1, -1]) { const st = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 3.2), metal(0xc9d1d7)); st.position.set(8, 0.1, sgn * 2.1); body.add(st); } }
+const fleetEngines = [];
+const slots = n => n === 1 ? [[-1.5, 1.7, 0]] : n === 2 ? [[-1.2, -1.15, 3.6], [-1.2, -1.15, -3.6]] : n === 3 ? [[-1.2, -1.15, 3.6], [-1.2, -1.15, -3.6], [4.2, 1.4, 0]] : [[-1.2, -1.15, 2.9], [-1.2, -1.15, -2.9], [-1.6, -1.15, 6.0], [-1.6, -1.15, -6.0]];
+function rebuild() {
+  fleetEngines.forEach(o => A.scene.remove(o.g)); fleetEngines.length = 0;
+  slots(ST.n).forEach((p, k) => { const E = makeEngine(0.3, false); E.g.position.set(p[0] - 0.8, p[1], p[2]); E.baseY = p[1]; E.baseZ = p[2]; E.phase = k * 1.7; A.scene.add(E.g); fleetEngines.push(E); });
+  const sel = $('sel'); sel.innerHTML = ''; ids().forEach((id, k) => { const o = document.createElement('option'); o.value = k; o.textContent = 'Engine ' + (k + 1) + ' (record ' + id + ')'; sel.appendChild(o); }); ST.sel = Math.min(ST.sel, ST.n - 1); sel.value = ST.sel;
+  const mx = Math.max(...ids().map(life)); $('cyc').max = mx; ST.cycle = Math.min(ST.cycle, mx); $('pull').max = life(ids()[ST.sel]);
+  buildFleetCharts(); closeupSensors();
+}
+// ---------------- close-up ----------------
+const CU = makeStage($('stage'), [-2, 4, 12], [2, 0, 0], S => { const d = Math.max(11, 6.2 / (Math.tan(THREE.MathUtils.degToRad(S.camera.fov / 2)) * S.camera.aspect)); S.camera.position.set(-2, 3 + d * 0.12, d); S.controls.update(); });
+{ const gr = new THREE.GridHelper(30, 30, 0x2a3a46, 0x1a2630); gr.position.y = -2.6; CU.scene.add(gr); }
+const big = makeEngine(1, true); big.baseY = 0; big.baseZ = 0; big.phase = 0; CU.scene.add(big.g);
+
+// ---------------- charts ----------------
+const charts = {};
+function mk(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart($(id), cfg); return charts[id]; }
+const base = { responsive: true, maintainAspectRatio: false, animation: false };
+function buildFleetCharts() {
+  const I = ids();
+  mk('chA', { type: 'line', data: { datasets: I.map((id, k) => ({ label: 'Engine ' + (k + 1) + ' (record ' + id + ')', data: [], borderColor: COLORS[k], backgroundColor: COLORS[k], pointRadius: 0, borderWidth: 2 })).concat([{ label: 'policy threshold N', data: [], borderColor: grey, borderDash: [6, 4], pointRadius: 0, borderWidth: 1 }]) },
+    options: Object.assign({}, base, { parsing: false, scales: { x: { type: 'linear', min: 0, max: +$('cyc').max, title: { display: true, text: 'Cycle' } }, y: { min: 0, max: 130, title: { display: true, text: 'Predicted remaining cycles' } } } }) });
+  mk('chB', { type: 'bar', data: { labels: I.map((id, k) => 'Engine ' + (k + 1)), datasets: [{ data: I.map(() => 0), backgroundColor: I.map(() => accent) }] },
+    options: Object.assign({}, base, { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, suggestedMax: 160, title: { display: true, text: 'Cost if pulled now (cycles of life)' } } } }) });
+}
+function closeupSensors() {
+  const id = ids()[ST.sel] || ids()[0], s = SENS.engines[id], r = SENS.range, n = life(id);
+  const sc = k => s[k].map((v, i) => ({ x: i + 1, y: (v - r[k][0]) / (r[k][1] - r[k][0]) }));
+  mk('chC', { type: 'line', data: { datasets: [['s4', 'LPT outlet temperature T50', '#ff8a40'], ['s11', 'HPC outlet pressure Ps30', '#4cc2d3'], ['s12', 'Fuel flow ratio phi', '#b07cf0']].map(a => ({ label: a[1], data: [], borderColor: a[2], pointRadius: 0, borderWidth: 1.6, _k: a[0], _all: sc(a[0]) })) },
+    options: Object.assign({}, base, { parsing: false, scales: { x: { type: 'linear', min: 0, max: n, title: { display: true, text: 'Cycle' } }, y: { title: { display: true, text: 'Share of the data set range' } } } }) });
+  mk('chS', { type: 'line', data: { datasets: [{ label: 'Fan speed Nf (rpm)', data: [], borderColor: accent, pointRadius: 0, borderWidth: 1.6, _all: s.s8.map((v, i) => ({ x: i + 1, y: v })) }] },
+    options: Object.assign({}, base, { parsing: false, scales: { x: { type: 'linear', min: 0, max: n, title: { display: true, text: 'Cycle' } }, y: { min: 2380, max: 2396, title: { display: true, text: 'rpm' } } } }) });
+  const rolling = []; for (let i = 0; i < 300; i++) rolling.push(null);
+  mk('chD', { type: 'line', data: { labels: rolling.map((_, i) => ((i - 299) / 10).toFixed(0)), datasets: [{ label: 'fan speed N1 (%)', data: rolling.slice(), borderColor: accent, pointRadius: 0, borderWidth: 1.6, yAxisID: 'y' }, { label: 'vibration index x20', data: rolling.slice(), borderColor: '#ff6b5e', pointRadius: 0, borderWidth: 1.6, yAxisID: 'y' }, { label: 'heat index (%)', data: rolling.slice(), borderColor: '#f0b84a', pointRadius: 0, borderWidth: 1.6, yAxisID: 'y' }] },
+    options: Object.assign({}, base, { scales: { x: { ticks: { maxTicksLimit: 7 }, title: { display: true, text: 'Seconds ago' } }, y: { min: 0, max: 130 } } }) });
+  playChart();
+}
+function playChart() {
+  const id = ids()[ST.sel] || ids()[0], n = life(id), fc = +$('fc').value, pts = [];
+  for (let c = MIN_CYCLE; c <= n + 6; c++) pts.push({ x: c, y: c >= n ? fc : n - c });
+  mk('chE', { type: 'line', data: { datasets: [{ label: 'cost of pulling at this cycle', data: pts, borderColor: accent, pointRadius: 0, borderWidth: 2, stepped: false }, { label: 'your choice', data: [], borderColor: '#b35c1e', backgroundColor: '#b35c1e', pointRadius: 7, showLine: false }] },
+    options: Object.assign({}, base, { parsing: false, scales: { x: { type: 'linear', min: MIN_CYCLE, max: n + 6, title: { display: true, text: 'Cycle at which the engine is pulled' } }, y: { beginAtZero: true, title: { display: true, text: 'Cost (cycles of life)' } } } }) });
+  updatePlay();
+}
+function updatePlay() {
+  const id = ids()[ST.sel] || ids()[0], n = life(id), p = +$('pull').value, fc = +$('fc').value, r = grade(p, fc, n);
+  $('pullv').textContent = p; $('res').textContent = 'Engine ' + (ST.sel + 1) + ' (record ' + id + ') lived ' + n + ' cycles. You pulled at ' + p + ': ' + r.outcome + '. Cost ' + r.cost + ', score ' + r.score.toFixed(2) + '.';
+  const ds = charts.chE.data.datasets[1]; ds.data = [{ x: p, y: r.cost }]; charts.chE.update('none');
+}
+function policyCharts() {
+  const kind = $('pol').value, N = +$('thr').value, fc = +$('fc').value, rows = [];
+  Object.keys(D.engines).forEach(id => { const e = D.engines[id], n = e.p.length, p = policyPull(e, kind, N), r = grade(p, fc, n); rows.push({ id, outcome: r.outcome, v: r.outcome === 'failed' ? fc : r.wasted }); });
+  const fails = rows.filter(r => r.outcome === 'failed').length, pulled = rows.filter(r => r.outcome === 'pulled'), waste = pulled.length ? pulled.reduce((a, r) => a + r.v, 0) / pulled.length : 0;
+  $('pres').textContent = 'Policy "' + $('pol').selectedOptions[0].text.split(':')[0] + '", N = ' + N + ', failure cost ' + fc + ': ' + fails + ' of 100 engines fail; the others waste ' + waste.toFixed(1) + ' cycles of life on average; mean score ' + (rows.reduce((a, r) => a + (r.outcome === 'failed' ? 0 : Math.max(0, 1 - r.v / fc)), 0) / 100).toFixed(3) + '.';
+  rows.sort((a, b) => a.v - b.v);
+  mk('chF', { type: 'bar', data: { labels: rows.map((_, i) => i + 1), datasets: [{ data: rows.map(r => r.v), backgroundColor: rows.map(r => r.outcome === 'failed' ? '#ff5a4e' : accent) }] }, options: Object.assign({}, base, { plugins: { legend: { display: false } }, scales: { x: { ticks: { display: false }, title: { display: true, text: '100 engines, sorted' } }, y: { beginAtZero: true, title: { display: true, text: 'Cycles wasted (blue) or failure cost (red)' } } } }) });
+  const F = D.frontier, key = kind === 'lb' ? 'lower_bound' : 'point_estimate';
+  mk('chG', { type: 'line', data: { labels: F.thresholds, datasets: [{ label: 'point estimate rule', data: F.point_estimate.map(r => r.failures), borderColor: accent, backgroundColor: accent, pointRadius: 2 }, { label: 'lower end of range rule', data: F.lower_bound.map(r => r.failures), borderColor: '#b35c1e', backgroundColor: '#b35c1e', borderDash: [6, 4], pointRadius: 2 }, { label: 'your N', data: F.thresholds.map(t => t === N || (t === N - 1 && N % 2) ? F[key][F.thresholds.indexOf(t)].failures : null), borderColor: '#ff5a4e', backgroundColor: '#ff5a4e', pointRadius: 9, showLine: false }] },
+    options: Object.assign({}, base, { scales: { x: { title: { display: true, text: 'Threshold N (cycles)' } }, y: { title: { display: true, text: 'Engines that fail (of 100)' } } } }) });
+}
+
+// ---------------- refresh and loop ----------------
+let lastChartUpdate = 0;
+function refresh(force) {
+  const I = ids(); $('nv').textContent = ST.n; $('cycv').textContent = ST.cycle; $('cyc').value = ST.cycle; $('engv').textContent = $('eng').value; $('n1v').textContent = $('n1').value; $('fcv').textContent = $('fc').value; $('thrv').textContent = $('thr').value;
+  const lines = I.map((id, k) => { const s = stateOf(id, ST.cycle); const tag = s.status === 'failed' ? '<span class="bad">FAILED</span>' : s.status === 'pulled' ? '<span class="ok">PULLED, ' + s.left + ' cycles left</span>' : (s.pred < 25 ? '<span class="warn">wearing out</span>' : 'running');
+    return 'Engine ' + (k + 1) + ' (record ' + id + '): predicted life <b>' + s.pred.toFixed(0) + '</b> (' + s.lo.toFixed(0) + ' to ' + s.hi.toFixed(0) + ') ' + tag; });
+  $('fhud').innerHTML = 'Cycle <b>' + ST.cycle + '</b><br>' + lines.join('<br>');
+  const sid = I[ST.sel] || I[0], sI = stateOf(sid, ST.cycle), nI = life(sid);
+  $('hud').innerHTML = 'Engine <b>' + (ST.sel + 1) + '</b> (record ' + sid + '), cycle <b>' + ST.cycle + '</b><br>Predicted life <b>' + sI.pred.toFixed(0) + '</b> (range ' + sI.lo.toFixed(0) + ' to ' + sI.hi.toFixed(0) + ')<br>' + (sI.status === 'failed' ? '<span class="bad">FAILED at cycle ' + nI + '</span>' : sI.status === 'pulled' ? '<span class="ok">PULLED at cycle ' + sI.c + ', ' + sI.left + ' cycles of life left</span>' : 'running') + (ST.n1 > 1.05 ? '<br><span class="bad">OVERSPEED ' + Math.round(ST.n1 * 100) + ' %</span>' : '');
+  // live charts (throttled to about 20 per second)
+  const now = performance.now(); if (!force && now - lastChartUpdate < 50) return; lastChartUpdate = now;
+  const A_ = charts.chA, thr = +$('thr').value; I.forEach((id, k) => { const e = eng(id), c = Math.min(ST.cycle, life(id)); A_.data.datasets[k].data = e.p.slice(0, c).map((v, i) => ({ x: i + 1, y: v })); });
+  A_.data.datasets[I.length].data = [{ x: 0, y: thr }, { x: +$('cyc').max, y: thr }]; A_.update('none');
+  const B_ = charts.chB; I.forEach((id, k) => { const s = stateOf(id, ST.cycle); B_.data.datasets[0].data[k] = s.status === 'failed' ? +$('fc').value : s.left; B_.data.datasets[0].backgroundColor[k] = s.status === 'failed' ? '#ff5a4e' : s.status === 'pulled' ? '#35c46f' : accent; }); B_.update('none');
+  const cs = charts.chC, ss = charts.chS, c = Math.min(ST.cycle, nI); cs.data.datasets.forEach(d => { d.data = d._all.slice(0, c); }); cs.update('none'); ss.data.datasets[0].data = ss.data.datasets[0]._all.slice(0, c); ss.update('none');
+}
+function stop() { if (ST.playing) { clearInterval(ST.playing); ST.playing = null; } }
+function reseat() { stop(); rebuild(); refresh(true); }
+$('neng').addEventListener('input', () => { ST.n = +$('neng').value; reseat(); });
+$('eng').addEventListener('input', () => { reseat(); });
+$('auto').addEventListener('change', () => { ST.auto = $('auto').checked; refresh(true); });
+['pol', 'thr', 'fc'].forEach(i => $(i).addEventListener('input', () => { policyCharts(); playChart(); refresh(true); }));
+$('n1').addEventListener('input', () => { ST.n1 = +$('n1').value / 100; refresh(true); });
+$('sel').addEventListener('change', () => { ST.sel = +$('sel').value; $('pull').max = life(ids()[ST.sel]); closeupSensors(); refresh(true); });
+$('cyc').addEventListener('input', () => { stop(); ST.cycle = +$('cyc').value; refresh(); });
+$('pull').addEventListener('input', updatePlay);
+$('cpause').onclick = stop;
+$('cplay').onclick = () => { stop(); if (ST.cycle >= +$('cyc').max) ST.cycle = 1; const mx = +$('cyc').max, sp = +$('spd').value; ST.playing = setInterval(() => { ST.cycle = Math.min(mx, ST.cycle + sp); if (ST.cycle >= mx) stop(); refresh(); }, 70); };
+
+// table of precomputed Python scores
+{ const tb = document.querySelector('#tbl tbody'), R = D.results['150']; Object.keys(R).forEach(k => { const v = R[k], tr = document.createElement('tr'); [k, v.failures, v.mean_wasted_cycles_when_pulled === null ? '' : v.mean_wasted_cycles_when_pulled, v.mean_score].forEach(x => { const td = document.createElement('td'); td.textContent = x; tr.appendChild(td); }); tb.appendChild(tr); }); }
+
+rebuild(); policyCharts(); refresh(true); A.resize(); CU.resize();
+const roll = { t: 0 };
+let t0 = performance.now();
+(function loop(now) {
+  const dt = Math.min(0.05, (now - t0) / 1000); t0 = now; const I = ids(), N1 = ST.n1;
+  fleetEngines.forEach((E, k) => { const s = stateOf(I[k], ST.cycle); updateEngine(E, { status: s.status, pred: s.pred, hot: hotOf(I[k], s.c) }, N1, dt, now); });
+  const sid = I[ST.sel] || I[0], s = stateOf(sid, ST.cycle), r = updateEngine(big, { status: s.status, pred: s.pred, hot: hotOf(sid, s.c) }, N1, dt, now);
+  $('gN').textContent = Math.round(N1 * 100) + ' %'; $('gRpm').textContent = Math.round(2388 * N1).toLocaleString() + ' rpm (illustration)'; $('gV').textContent = r.vib.toFixed(2); $('gT').textContent = (r.heat * 100).toFixed(0) + ' %';
+  roll.t += dt; if (roll.t >= 0.1) { roll.t = 0; const cD = charts.chD; cD.data.datasets.forEach((d, i) => { d.data.shift(); d.data.push(i === 0 ? N1 * 100 : i === 1 ? Math.min(130, r.vib * 20) : r.heat * 100); }); cD.update('none'); }
+  A.controls.update(); A.renderer.render(A.scene, A.camera); CU.controls.update(); CU.renderer.render(CU.scene, CU.camera); requestAnimationFrame(loop);
+})(t0);
+window.__sim = { ST, ids, stateOf, charts, policyPull, grade };
+</script>
+</body>
+</html>

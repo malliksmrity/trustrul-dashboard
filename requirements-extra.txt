@@ -1,0 +1,7 @@
+# Extra packages for src/conformal_shap_mlflow.py
+-r requirements.txt
+shap==0.51.0
+mlflow-skinny==3.17.1
+sqlalchemy==2.1.4
+alembic==1.20.0
+xgboost==3.2.0

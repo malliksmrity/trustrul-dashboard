@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrustRUL | Engine life prediction that shows how sure it is</title>
+<meta name="description" content="A neural network estimates the remaining life of 100 jet engines and gives a margin of error for each. Its stated 90 percent range held the true value 82 percent of the time.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><span>Smrity Mallik &middot; Project page</span><a href="https://github.com/malliksmrity/trustrul-dashboard">Code on GitHub</a></div>
+
+  <p class="kicker">Predictive maintenance &middot; aircraft engines &middot; uncertainty</p>
+  <h1>A model that estimates engine life and says how unsure it is, but its margin of error is a bit too narrow</h1>
+  <p class="lead">On 100 test engines the typical error was about 13 flight cycles. Each estimate came with a 90 percent range. In practice the true value fell inside that range 82 times out of 100.</p>
+  <p class="note">Data: NASA turbofan simulation (C-MAPSS FD001). Simulated engines. Master&rsquo;s coursework (module M507), extended afterwards.</p>
+
+  <p class="callout"><b>Try it live:</b> <a href="https://huggingface.co/spaces/malliksmrity/maintenance-sim-env" target="_blank" rel="noopener">MaintenanceSimEnv</a>, a 3D engine simulation where you decide when to pull each of 100 real engines.</p>
+  <noscript><p class="callout">The charts need JavaScript. The numbers are repeated in the text and in the code repository.</p></noscript>
+
+  <div class="facts">
+    <div class="fact"><b id="f1">13.47</b><span>typical error (RMSE, cycles)</span></div>
+    <div class="fact"><b id="f2">82%</b><span>of true values inside the &ldquo;90%&rdquo; range</span></div>
+    <div class="fact"><b id="f3">25 of 100</b><span>engines sent to a human to check</span></div>
+  </div>
+
+  <h2>What the numbers show</h2>
+
+  <figure>
+    <div class="box"><canvas id="c1" role="img" aria-label="Bar chart comparing the neural network with simple baselines"></canvas></div>
+    <figcaption><b>Chart 1.</b> Error on the 100 test engines, lower is better. The neural network beats a simple linear model and a tree-based model that only see the latest reading. Baselines were added afterwards to give the 13.47 some context.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="box" style="height:420px"><canvas id="c2" role="img" aria-label="Bar chart of validation error for twelve model set-ups"></canvas></div>
+    <figcaption><b>Chart 2.</b> Twelve set-ups were tried on 20 engines held back for validation. A GRU (a type of recurrent network) with a 30-cycle window did best. The 1D-CNN with attention was clearly worse here.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="box" style="height:340px"><canvas id="c3" role="img" aria-label="Chart of predicted remaining life with its range for 100 engines"></canvas></div>
+    <figcaption><b>Chart 3.</b> Each column is one test engine, sorted by true remaining life. The bar is the stated 90 percent range, the line is the prediction, the dots are the truth. About one engine in five has its dot outside the bar.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="box"><canvas id="c4" role="img" aria-label="Bar chart of average error for flagged and not flagged engines"></canvas></div>
+    <figcaption><b>Chart 4.</b> The 25 engines with the widest range were sent to a human reviewer. Their average error is not larger than for the other 75. So in this test the flag did not pick out the worst predictions, although a wider range does go with larger error to some extent (rank correlation 0.31).</figcaption>
+  </figure>
+
+  <h2>A fix for the narrow range</h2>
+  <p>A standard method called split conformal prediction sets the width of the range from errors on 20 engines held back for calibration. Retraining the GRU and calibrating it this way gives a range that covers <b id="cf1"></b> of the 100 test engines, instead of <b id="cf2"></b> without calibration. The price is a wider range: <b id="cf3"></b> cycles on average instead of <b id="cf4"></b>. SHAP values (an explanation method) on the simpler baseline put sensors 11, 9 and 4 first. Each baseline run is logged with MLflow. A <a href="https://github.com/malliksmrity/trustrul-dashboard/blob/main/reports/MODEL_CARD.md">model card</a> lists the limits.</p>
+  <figure>
+    <div class="box" style="height:260px"><canvas id="c5" role="img" aria-label="Bar chart of interval coverage for three methods"></canvas></div>
+    <figcaption><b>Chart 5.</b> Share of the 100 test engines whose true value fell inside the stated 90 percent range, for the GRU retrained for this check. The dropout range alone is too narrow (the saved model: 82). Fixed-width conformal reaches 89. The normalised version, which keeps the width proportional to the model&rsquo;s own spread, reaches 90 at a slightly smaller width. With 100 engines the result is uncertain by about 3 points.</figcaption>
+  </figure>
+
+  <h2>Compared with a simpler model</h2>
+  <p>The earlier engine-life project (XGBoost, a tree-based model) now lives in this repository. Tested on whole engines, the best XGBoost reaches an error of <b id="xg1"></b> cycles on the same capped truth as the GRU (<b id="xg2"></b>). The XGBoost project also showed that the way you test matters.</p>
+  <figure>
+    <div class="box" style="height:260px"><canvas id="c6" role="img" aria-label="Bar chart: the same XGBoost scored three ways"></canvas></div>
+    <figcaption><b>Chart 6.</b> The same XGBoost model scored three ways. A random row split puts rows of one engine in both train and test (left). Holding out whole engines is stricter (middle). The official test looks only at each engine&rsquo;s last reading, which is easier (right). The three numbers are not comparable with each other.</figcaption>
+  </figure>
+
+  <h2>Look up one engine</h2>
+  <div class="callout">
+    <label for="eng">Test engine: </label><select id="eng"></select>
+    <p id="engout" style="margin:12px 0 0"></p>
+  </div>
+
+  <h2>How it works</h2>
+  <ol class="steps">
+    <li>The model reads the last 30 cycles of 14 sensor channels for an engine.</li>
+    <li>It predicts the cycles left. Dropout stays switched on and the prediction is repeated 50 times, which gives a spread (a range) instead of one number.</li>
+    <li>If the range is in the widest quarter, the engine is flagged for a person to look at.</li>
+  </ol>
+
+  <h2>Limits</h2>
+  <ul class="plain">
+    <li>True remaining life is capped at 125 cycles, in training and in the scoring. The real values of long-life engines are higher.</li>
+    <li>The 90 percent range is not calibrated: 82 percent coverage on only 100 engines (so roughly 75 to 89 percent plausible). The README of the first version already called it uncalibrated; this page puts a number on it.</li>
+    <li>One operating condition, one fault type, simulated data. Not for real maintenance decisions.</li>
+    <li>Charts 1 to 4 and the engine lookup use the saved GRU predictions. Chart 5 uses a GRU retrained for the calibration check (error 13.72 instead of 13.47 because retraining is not bit-identical).</li>
+    <li>The calibration engines are all cycles of 20 held-back engines, while test points are the last cycle of truncated engines, so the coverage guarantee is only approximate.</li>
+  </ul>
+
+  <footer>
+    Data: NASA Prognostics Center of Excellence, C-MAPSS (Saxena and Goebel, 2008), public for research.
+    Code and notes: <a href="https://github.com/malliksmrity/trustrul-dashboard">github.com/malliksmrity/trustrul-dashboard</a>.
+    Last checked October 2026.
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script src="gru_conformal.js"></script>
+<script src="rul_xgboost.js"></script>
+<script>
+(function () {
+  var D = window.PAGE_DATA;
+  var css = getComputedStyle(document.documentElement);
+  var accent = css.getPropertyValue('--accent').trim(), grey = css.getPropertyValue('--grey').trim(),
+      text = css.getPropertyValue('--text').trim(), line = css.getPropertyValue('--line').trim(),
+      soft = css.getPropertyValue('--accent-soft').trim();
+  Chart.defaults.color = text; Chart.defaults.borderColor = line;
+  Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
+  var opts = { responsive: true, maintainAspectRatio: false, animation: false };
+  function wrap(t) { var out = [], cur = ''; t.split(' ').forEach(function (w) { if ((cur + ' ' + w).trim().length > 16) { out.push(cur.trim()); cur = w; } else { cur += ' ' + w; } }); out.push(cur.trim()); return out; }
+
+  document.getElementById('f1').textContent = D.baselines[3].rmse.toFixed(2);
+  document.getElementById('f2').textContent = Math.round(D.checks.interval_coverage * 100) + '%';
+  document.getElementById('f3').textContent = D.checks.n_flagged + ' of ' + D.checks.n_engines;
+
+  new Chart(document.getElementById('c1'), { type: 'bar',
+    data: { labels: D.baselines.map(function (r) { return wrap(r.model); }),
+            datasets: [{ data: D.baselines.map(function (r) { return r.rmse; }), backgroundColor: D.baselines.map(function (r, i) { return i === 3 ? accent : grey; }) }] },
+    options: Object.assign({ indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, title: { display: true, text: 'Error in cycles (RMSE)' } } } }, opts) });
+
+  var ex = D.experiments.slice().sort(function (a, b) { return a.val_RMSE - b.val_RMSE; });
+  new Chart(document.getElementById('c2'), { type: 'bar',
+    data: { labels: ex.map(function (r) { return wrap(r.arch + ' w' + r.win + ' d' + r.dropout + ' ' + r.loss + (r.sensors === 'corr' ? ' corr' : '') + (r.norm === 'minmax' ? ' minmax' : '')); }),
+            datasets: [{ data: ex.map(function (r) { return r.val_RMSE; }), backgroundColor: ex.map(function (r, i) { return i === 0 ? accent : grey; }) }] },
+    options: Object.assign({ indexAxis: 'y', plugins: { legend: { display: false } }, scales: { y: { ticks: { autoSkip: false, font: { size: 11 } } }, x: { beginAtZero: true, title: { display: true, text: 'Validation error (RMSE, cycles)' } } } }, opts) });
+
+  var eng = D.engines.slice().sort(function (a, b) { return a.true_RUL - b.true_RUL; });
+  new Chart(document.getElementById('c3'), { data: {
+      labels: eng.map(function (e) { return e.engine; }),
+      datasets: [
+        { type: 'bar', label: 'Stated 90% range', data: eng.map(function (e) { return [e.CI90_low, e.CI90_high]; }), backgroundColor: soft, borderColor: accent, borderWidth: 1 },
+        { type: 'line', label: 'Prediction', data: eng.map(function (e) { return e.pred_RUL; }), borderColor: accent, pointRadius: 0, borderWidth: 2 },
+        { type: 'line', label: 'True value', data: eng.map(function (e) { return e.true_RUL; }), showLine: false, pointRadius: 2.5, backgroundColor: text, borderColor: text }] },
+    options: Object.assign({ scales: { x: { ticks: { display: false }, title: { display: true, text: 'Test engines, shortest true life first' } }, y: { title: { display: true, text: 'Remaining cycles' } } } }, opts) });
+
+  new Chart(document.getElementById('c4'), { type: 'bar',
+    data: { labels: ['Sent to a human (25)', 'Handled automatically (75)'],
+            datasets: [{ data: [D.checks.mean_abs_err_flagged, D.checks.mean_abs_err_auto], backgroundColor: [accent, grey] }] },
+    options: Object.assign({ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'Average absolute error (cycles)' } } } }, opts) });
+  var G = window.GRUC, GI = G.test_intervals;
+  document.getElementById('cf1').textContent = Math.round(GI[2].coverage * 100) + '%';
+  document.getElementById('cf2').textContent = Math.round(GI[0].coverage * 100) + '%';
+  document.getElementById('cf3').textContent = GI[2].mean_width;
+  document.getElementById('cf4').textContent = GI[0].mean_width;
+  new Chart(document.getElementById('c5'), { type: 'bar',
+    data: { labels: ['Dropout range', 'Conformal, fixed width', 'Conformal, normalised'], datasets: [{ data: GI.map(function (r) { return Math.round(r.coverage * 100); }), backgroundColor: [grey, grey, accent] }] },
+    options: Object.assign({ plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, title: { display: true, text: 'Coverage (%), target 90' } } } }, opts) });
+
+  var X = window.RULX.results;
+  function xr(model, ev) { return X.filter(function (r) { return r.model === model && r.evaluation.indexOf(ev) === 0; })[0]; }
+  document.getElementById('xg1').textContent = xr('XGBoost (RUL capped at 125)', 'C.').rmse_vs_capped_truth;
+  document.getElementById('xg2').textContent = D.baselines[3].rmse + ' for the saved GRU';
+  new Chart(document.getElementById('c6'), { type: 'bar',
+    data: { labels: ['Random row split', 'Whole engines held out', 'Official test set'], datasets: [{ data: [xr('XGBoost (original)', 'A.').rmse, xr('XGBoost (all features)', 'B.').rmse, xr('XGBoost (all features)', 'C.').rmse], backgroundColor: [grey, grey, accent] }] },
+    options: Object.assign({ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'Error in cycles (RMSE)' } } } }, opts) });
+  var sel = document.getElementById('eng');
+  D.engines.forEach(function (e) { var o = document.createElement('option'); o.value = e.engine; o.textContent = 'Engine ' + e.engine; sel.appendChild(o); });
+  function show() {
+    var e = D.engines.filter(function (x) { return String(x.engine) === sel.value; })[0];
+    document.getElementById('engout').textContent = 'Predicted ' + e.pred_RUL.toFixed(0) + ' cycles left (90% range ' + e.CI90_low.toFixed(0) + ' to ' + e.CI90_high.toFixed(0) + '). True value ' + e.true_RUL.toFixed(0) + '. Error ' + e.abs_err.toFixed(1) + '. Main sensors: ' + e.top_sensors + '. ' + (e.review === 'HUMAN' ? 'Sent to a human reviewer.' : 'Handled automatically.');
+  }
+  sel.addEventListener('change', show); show();
+})();
+</script>
+</body>
+</html>
