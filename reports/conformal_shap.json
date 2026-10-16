@@ -1,0 +1,26 @@
+{
+  "model": "GradientBoostingRegressor on last reading, 14 sensors",
+  "target": "RUL capped at 125",
+  "calibration_engines": 20,
+  "calibration_rows": 4070,
+  "alpha": 0.1,
+  "half_width_cycles": 29.8,
+  "test_rmse": 17.24,
+  "test_coverage": 0.89,
+  "gru_saved_interval_coverage": 0.82,
+  "shap_mean_abs_top": {
+    "sensor_11": 7.93,
+    "sensor_9": 6.68,
+    "sensor_4": 5.22,
+    "sensor_12": 4.3,
+    "sensor_14": 4.26,
+    "sensor_15": 3.06,
+    "sensor_7": 2.93,
+    "sensor_20": 2.33
+  },
+  "caveats": [
+    "calibration rows are all cycles of the validation engines, test points are the last cycle of truncated engines, so exchangeability is only approximate",
+    "100 test engines: coverage has a standard error of about 3 points",
+    "applies to the baseline, not to the GRU"
+  ]
+}

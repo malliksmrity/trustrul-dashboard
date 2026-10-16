@@ -1,0 +1,38 @@
+{
+  "retrained_gru": {
+    "test_rmse": 13.72,
+    "test_score": 343.6,
+    "saved_model_rmse_for_reference": 13.47
+  },
+  "calibration": {
+    "engines": 20,
+    "windows": 3490,
+    "alpha": 0.1,
+    "q_fixed": 20.4,
+    "q_normalised": 0.65
+  },
+  "test_intervals": [
+    {
+      "method": "A. MC dropout range as is",
+      "coverage": 0.78,
+      "mean_width": 27.7
+    },
+    {
+      "method": "B. split conformal (fixed width)",
+      "coverage": 0.89,
+      "mean_width": 35.2
+    },
+    {
+      "method": "C. normalised conformal (width follows MC spread)",
+      "coverage": 0.9,
+      "mean_width": 34.3
+    }
+  ],
+  "mc_range_coverage_on_validation_windows": 0.822,
+  "spearman_mc_band_vs_abs_error_test": 0.29,
+  "caveats": [
+    "calibration windows are all cycles of the validation engines; test points are the last cycle of truncated engines, so exchangeability is approximate",
+    "100 test engines: coverage has a standard error of about 3 points",
+    "retrained model is not bit-identical to the saved one"
+  ]
+}
