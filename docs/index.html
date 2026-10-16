@@ -47,10 +47,17 @@
   </figure>
 
   <h2>A fix for the narrow range</h2>
-  <p>A standard method called split conformal prediction sets the width of the range from errors on engines held back for calibration. Applied to the gradient-boosting baseline, the &ldquo;90 percent&rdquo; range covers <b id="cf1"></b> of the test engines, with a width of plus or minus <b id="cf2"></b> cycles. The same step for the GRU needs it to be retrained first, which is a planned next step. SHAP values (an explanation method) put sensors 11, 9 and 4 first for the baseline. Each prediction run is logged with MLflow. A <a href="https://github.com/malliksmrity/trustrul-dashboard/blob/main/reports/MODEL_CARD.md">model card</a> lists the limits.</p>
+  <p>A standard method called split conformal prediction sets the width of the range from errors on 20 engines held back for calibration. Retraining the GRU and calibrating it this way gives a range that covers <b id="cf1"></b> of the 100 test engines, instead of <b id="cf2"></b> without calibration. The price is a wider range: <b id="cf3"></b> cycles on average instead of <b id="cf4"></b>. SHAP values (an explanation method) on the simpler baseline put sensors 11, 9 and 4 first. Each baseline run is logged with MLflow. A <a href="https://github.com/malliksmrity/trustrul-dashboard/blob/main/reports/MODEL_CARD.md">model card</a> lists the limits.</p>
   <figure>
-    <div class="box" style="height:240px"><canvas id="c5" role="img" aria-label="Bar chart of interval coverage"></canvas></div>
-    <figcaption><b>Chart 5.</b> Share of the 100 test engines whose true value fell inside the stated 90 percent range. With 100 engines the result is uncertain by about 3 points.</figcaption>
+    <div class="box" style="height:260px"><canvas id="c5" role="img" aria-label="Bar chart of interval coverage for three methods"></canvas></div>
+    <figcaption><b>Chart 5.</b> Share of the 100 test engines whose true value fell inside the stated 90 percent range, for the GRU retrained for this check. The dropout range alone is too narrow (the saved model: 82). Fixed-width conformal reaches 89. The normalised version, which keeps the width proportional to the model&rsquo;s own spread, reaches 90 at a slightly smaller width. With 100 engines the result is uncertain by about 3 points.</figcaption>
+  </figure>
+
+  <h2>Compared with a simpler model</h2>
+  <p>The earlier engine-life project (XGBoost, a tree-based model) now lives in this repository. Tested on whole engines, the best XGBoost reaches an error of <b id="xg1"></b> cycles on the same capped truth as the GRU (<b id="xg2"></b>). The XGBoost project also showed that the way you test matters.</p>
+  <figure>
+    <div class="box" style="height:260px"><canvas id="c6" role="img" aria-label="Bar chart: the same XGBoost scored three ways"></canvas></div>
+    <figcaption><b>Chart 6.</b> The same XGBoost model scored three ways. A random row split puts rows of one engine in both train and test (left). Holding out whole engines is stricter (middle). The official test looks only at each engine&rsquo;s last reading, which is easier (right). The three numbers are not comparable with each other.</figcaption>
   </figure>
 
   <h2>Look up one engine</h2>
@@ -71,7 +78,8 @@
     <li>True remaining life is capped at 125 cycles, in training and in the scoring. The real values of long-life engines are higher.</li>
     <li>The 90 percent range is not calibrated: 82 percent coverage on only 100 engines (so roughly 75 to 89 percent plausible). The README of the first version already called it uncalibrated; this page puts a number on it.</li>
     <li>One operating condition, one fault type, simulated data. Not for real maintenance decisions.</li>
-    <li>The model was not retrained for this page. All numbers are read from the saved predictions in the repository.</li>
+    <li>Charts 1 to 4 and the engine lookup use the saved GRU predictions. Chart 5 uses a GRU retrained for the calibration check (error 13.72 instead of 13.47 because retraining is not bit-identical).</li>
+    <li>The calibration engines are all cycles of 20 held-back engines, while test points are the last cycle of truncated engines, so the coverage guarantee is only approximate.</li>
   </ul>
 
   <footer>
@@ -83,7 +91,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="data.js"></script>
-<script src="conformal.js"></script>
+<script src="gru_conformal.js"></script>
+<script src="rul_xgboost.js"></script>
 <script>
 (function () {
   var D = window.PAGE_DATA;
@@ -124,12 +133,22 @@
     data: { labels: ['Sent to a human (25)', 'Handled automatically (75)'],
             datasets: [{ data: [D.checks.mean_abs_err_flagged, D.checks.mean_abs_err_auto], backgroundColor: [accent, grey] }] },
     options: Object.assign({ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'Average absolute error (cycles)' } } } }, opts) });
-  var CF = window.CONFORMAL;
-  document.getElementById('cf1').textContent = Math.round(CF.test_coverage * 100) + '%';
-  document.getElementById('cf2').textContent = CF.half_width_cycles;
+  var G = window.GRUC, GI = G.test_intervals;
+  document.getElementById('cf1').textContent = Math.round(GI[2].coverage * 100) + '%';
+  document.getElementById('cf2').textContent = Math.round(GI[0].coverage * 100) + '%';
+  document.getElementById('cf3').textContent = GI[2].mean_width;
+  document.getElementById('cf4').textContent = GI[0].mean_width;
   new Chart(document.getElementById('c5'), { type: 'bar',
-    data: { labels: ['GRU saved range', 'Gradient boosting with conformal'], datasets: [{ data: [Math.round(CF.gru_saved_interval_coverage * 100), Math.round(CF.test_coverage * 100)], backgroundColor: [grey, accent] }] },
+    data: { labels: ['Dropout range', 'Conformal, fixed width', 'Conformal, normalised'], datasets: [{ data: GI.map(function (r) { return Math.round(r.coverage * 100); }), backgroundColor: [grey, grey, accent] }] },
     options: Object.assign({ plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, title: { display: true, text: 'Coverage (%), target 90' } } } }, opts) });
+
+  var X = window.RULX.results;
+  function xr(model, ev) { return X.filter(function (r) { return r.model === model && r.evaluation.indexOf(ev) === 0; })[0]; }
+  document.getElementById('xg1').textContent = xr('XGBoost (RUL capped at 125)', 'C.').rmse_vs_capped_truth;
+  document.getElementById('xg2').textContent = D.baselines[3].rmse + ' for the saved GRU';
+  new Chart(document.getElementById('c6'), { type: 'bar',
+    data: { labels: ['Random row split', 'Whole engines held out', 'Official test set'], datasets: [{ data: [xr('XGBoost (original)', 'A.').rmse, xr('XGBoost (all features)', 'B.').rmse, xr('XGBoost (all features)', 'C.').rmse], backgroundColor: [grey, grey, accent] }] },
+    options: Object.assign({ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'Error in cycles (RMSE)' } } } }, opts) });
   var sel = document.getElementById('eng');
   D.engines.forEach(function (e) { var o = document.createElement('option'); o.value = e.engine; o.textContent = 'Engine ' + e.engine; sel.appendChild(o); });
   function show() {
