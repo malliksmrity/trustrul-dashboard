@@ -66,7 +66,7 @@ NASA C-MAPSS turbofan simulation, subset FD001: 100 training engines run to fail
 
 ## 8. Deployment
 
-**Simulation environment (simulation/):** MaintenanceSimEnv replays the 100 real run-to-failure engines with out-of-fold predictions and a 90 percent range, and scores maintenance policies by cost. Finding: pulling when the predicted life is 8 cycles or less gives 0 failures and about 8 cycles wasted; at 4 cycles 15 of 100 engines fail; a fixed-width range rule wastes about 32 cycles. The failure cost (default 150 cycles) is an assumption, tested at 50 and 400. Live Gradio app, Space-ready, not yet deployed. n8n workflow in utomation/n8n/ (untested in n8n).
+**Simulation environment (simulation/):** MaintenanceSimEnv replays the 100 real run-to-failure engines with out-of-fold predictions and a 90 percent range, and scores maintenance policies by cost. Finding: pulling when the predicted life is 8 cycles or less gives 0 failures and about 8 cycles wasted; at 4 cycles 30 of 100 engines fail; a fixed-width range rule wastes about 32 cycles. The failure cost (default 150 cycles) is an assumption, tested at 50 and 400. Live Gradio app, Space-ready, not yet deployed. n8n workflow in utomation/n8n/ (untested in n8n).
 
 | What | How | Status |
 |---|---|---|

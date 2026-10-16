@@ -53,7 +53,8 @@ class MaintenanceSimEnv:
         assert not self.done, "episode finished: call reset()"
         r = self.df.iloc[self.i]
         last = self.i == len(self.df) - 1
-        if action == PULL and r.cycle >= self.costs.min_cycle:
+        # an engine fails at the end of its last cycle, so pulling on that cycle is too late (same rule as submit())
+        if action == PULL and r.cycle >= self.costs.min_cycle and not last:
             self.done = True
             self.cost = self.costs.waste_per_cycle * float(r.true_rul)
             return self._obs(), -self.cost, True, {"outcome": "pulled", "wasted_cycles": float(r.true_rul)}
