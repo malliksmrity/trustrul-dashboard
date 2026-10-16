@@ -12,4 +12,5 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python src/baselines_and_checks.py
       - name: Numbers on the page must not change unnoticed
-        run: git diff --stat --exit-code -- reports docs/data.js || echo "Outputs changed: review and commit"
+        run: |
+          git diff --stat --exit-code -- reports docs/data.js || echo "Outputs changed - review and commit"
