@@ -44,15 +44,17 @@ NASA C-MAPSS turbofan simulation, subset FD001: 100 training engines run to fail
 | XGBoost, labels capped at 125 | merged earlier project | 17.76 (vs capped truth) |
 | LSTM, GRU, 1D-CNN + attention | compared on validation engines | best GRU: validation 11.69 |
 | **GRU with Monte Carlo dropout** | main model | **13.47** |
-| GRU + split conformal | calibrated range | coverage 89 to 90 of 100 |
+| GRU + split conformal | calibrated range | coverage 89 to 90 of 100 (95 % Wilson range 81 to 94 %) |
 
 ## 6. Technical documentation
+
+- **How sure is the coverage figure?** With 100 test engines, 90 covered has a 95 % Wilson range of 82.6 to 94.5 %, so it is consistent with the 90 % target. The raw dropout range (78 of 100, range 69 to 85 %) is clearly below the target. Only 20 engines calibrate the margin, so a different calibration split could shift it by a few points; a repeated-split check is the next step.
 
 - Windows of 30 cycles, 14 sensors, standard scaling fit on the 80 training engines, RUL capped at 125, seed 42. Best configuration: GRU, dropout 0.3, MSE loss.
 - Range: 50 dropout passes, 5th to 95th percentile. Review rule: range in the widest quarter of test engines.
 - Conformal (`src/gru_conformal.py`): calibration set = all windows of the 20 validation engines; fixed width uses the 90th percentile of absolute errors, normalised uses the 90th percentile of error divided by the dropout band. The guarantee assumes exchangeable calibration and test points, which is only approximate here (calibration uses all cycles of the validation engines, the test uses each engine's last cycle).
 - Retrained model: not bit-identical to the saved one (13.72 against 13.47).
-- Baselines: `src/baselines_and_checks.py` (needs only scikit-learn); XGBoost: `src/rul_xgboost_baselines.py` (grouped CV by engine, official test set, five seeds: RMSE 18.84 ± 0.39 with row and column subsampling); SHAP and MLflow: `src/conformal_shap_mlflow.py`.
+- Baselines: `src/baselines_and_checks.py` (needs only scikit-learn); XGBoost: `src/rul_xgboost_baselines.py` (grouped CV by engine, official test set, five seeds: RMSE 18.84 Â± 0.39 with row and column subsampling); SHAP and MLflow: `src/conformal_shap_mlflow.py`.
 - EU AI Act note in the model card: the coursework notebook called the system high-risk under Article 6(1); my later re-reading is that civil-aviation law sits in Annex I Section B, where only some AI Act articles apply directly, so this is **unverified**. Ask a qualified person.
 - Limits: simulated data, one operating condition and fault mode, capped target, 100 test engines, flag not shown to help, the saved `scaler.pkl` is a pickle (load only your own).
 - Reproduce: `pip install -r requirements.txt`; `python src/baselines_and_checks.py`; extras `pip install -r requirements-extra.txt` then `python src/rul_xgboost_baselines.py` and `python src/conformal_shap_mlflow.py`; with TensorFlow (`requirements-train.txt`) `python src/gru_conformal.py` (about 15 minutes on CPU) and `python src/export_artifacts.py`.
