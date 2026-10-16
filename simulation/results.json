@@ -208,21 +208,21 @@
       },
       {
         "threshold": 2,
-        "failures": 68,
-        "waste": 1.3,
-        "cost_at_150": 102.4
+        "failures": 81,
+        "waste": 2.3,
+        "cost_at_150": 121.9
       },
       {
         "threshold": 4,
-        "failures": 15,
-        "waste": 3.3,
-        "cost_at_150": 25.3
+        "failures": 30,
+        "waste": 4.0,
+        "cost_at_150": 47.8
       },
       {
         "threshold": 6,
-        "failures": 2,
-        "waste": 5.6,
-        "cost_at_150": 8.5
+        "failures": 6,
+        "waste": 5.8,
+        "cost_at_150": 14.5
       },
       {
         "threshold": 8,

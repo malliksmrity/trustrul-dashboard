@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MaintenanceSimEnv | When should an engine be pulled?</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><span>Smrity Mallik &middot; Simulation</span><a href="https://github.com/malliksmrity/trustrul-dashboard">Code on GitHub</a></div>
+  <p class="kicker">Simulation environment &middot; predictive maintenance</p>
+  <h1>MaintenanceSimEnv: when should an engine be pulled from service?</h1>
+  <p class="lead">Replay one of 100 real run-to-failure engines (NASA C-MAPSS, simulated engines with recorded sensor histories). Each prediction comes from a model that never saw that engine. Pull early and you waste life. Run to failure and you pay the failure cost.</p>
+  <p class="note">The failure cost is an assumption (default 150 cycles of life). Score = 1 &minus; cost / failure cost; the hindsight optimum pulls one cycle before failure.</p>
+  <noscript><p class="callout">This simulation needs JavaScript.</p></noscript>
+
+  <h2>1. Choose an engine and a failure cost</h2>
+  <div class="callout">
+    <label for="eng">Engine: <b id="engv">1</b></label><br><input id="eng" type="range" min="1" max="100" value="1" style="width:100%"><br>
+    <label for="fc">Failure cost: <b id="fcv">150</b> cycles of life</label><br><input id="fc" type="range" min="50" max="400" step="10" value="150" style="width:100%">
+  </div>
+  <figure>
+    <div class="box" style="height:320px"><canvas id="ch" role="img" aria-label="Predicted remaining life with its range"></canvas></div>
+    <figcaption>Predicted remaining life with its 90 percent range. The dashed line is the true remaining life, which the agent cannot see. The vertical line is where you or the policy pulled.</figcaption>
+  </figure>
+
+  <h2>2. Play it yourself</h2>
+  <div class="callout">
+    <label for="pull">Pull at cycle: <b id="pullv">100</b></label><br><input id="pull" type="range" min="30" max="362" value="100" style="width:100%"><br>
+    <button id="go" class="btn">Submit plan</button>
+    <p id="res" style="margin:12px 0 0"></p>
+  </div>
+
+  <h2>3. Or run a policy</h2>
+  <div class="callout">
+    <label for="pol">Policy</label>
+    <select id="pol"><option value="pt">Point estimate: pull when predicted life is at most N</option><option value="lb">Lower end of the range: pull when the lower bound is at most N</option><option value="fx">Fixed interval: pull at cycle 4 x N</option></select><br>
+    <label for="thr">N = <b id="thrv">8</b></label><br><input id="thr" type="range" min="0" max="40" value="8" style="width:100%"><br>
+    <button id="run" class="btn">Run on this engine</button> <button id="all" class="btn">Run on all 100 engines</button>
+    <p id="pres" style="margin:12px 0 0"></p>
+  </div>
+
+  <h2>Scores over all 100 engines</h2>
+  <p class="note">Failure cost 150. Precomputed in Python (<code>simulation/evaluate_policies.py</code>).</p>
+  <div class="tablewrap"><table id="tbl"><thead><tr><th>Policy</th><th>Failures</th><th>Mean wasted cycles</th><th>Mean score</th></tr></thead><tbody></tbody></table></div>
+  <figure>
+    <div class="box" style="height:280px"><canvas id="fr" role="img" aria-label="Engines that fail against the threshold"></canvas></div>
+    <figcaption>Engines that fail (of 100) as the pull threshold falls. The point-estimate rule is safe down to about 8 cycles. The range-based rule never fails here, but wastes about 32 cycles, because a fixed-width range is far wider than the real error near end of life.</figcaption>
+  </figure>
+
+  <footer>Data: NASA Prognostics Center of Excellence, C-MAPSS FD001 (Saxena and Goebel, 2008). Simulation replay built from out-of-fold predictions. Not for real maintenance decisions. Part of the TrustRUL project.</footer>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script>
+(function () {
+  var D = window.SIM, MIN = 30;
+  var css = getComputedStyle(document.documentElement), accent = css.getPropertyValue('--accent').trim(), grey = css.getPropertyValue('--grey').trim(), text = css.getPropertyValue('--text').trim(), line = css.getPropertyValue('--line').trim(), soft = css.getPropertyValue('--accent-soft').trim();
+  Chart.defaults.color = text; Chart.defaults.borderColor = line; Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
+  var $ = function (id) { return document.getElementById(id); }, chart = null;
+  function eng() { return D.engines[+$('eng').value]; }
+  function life(e) { return e.p.length; }
+  function draw(pullCycle) {
+    var e = eng(), n = life(e), cyc = e.p.map(function (_, i) { return i + 1; });
+    var truth = cyc.map(function (c) { return Math.min(125, n - c); });
+    var ann = { id: 'pullLine', afterDraw: function (ch) { if (!pullCycle) return; var x = ch.scales.x.getPixelForValue(pullCycle - 1), a = ch.chartArea, c = ch.ctx; c.save(); c.strokeStyle = '#b35c1e'; c.lineWidth = 2; c.beginPath(); c.moveTo(x, a.top); c.lineTo(x, a.bottom); c.stroke(); c.restore(); } };
+    if (chart) chart.destroy();
+    chart = new Chart($('ch'), { type: 'line', plugins: [ann], data: { labels: cyc, datasets: [
+      { label: 'upper end', data: e.h, borderColor: 'transparent', backgroundColor: soft, pointRadius: 0, fill: '+1' },
+      { label: 'lower end', data: e.l, borderColor: 'transparent', pointRadius: 0 },
+      { label: 'predicted', data: e.p, borderColor: accent, borderWidth: 2, pointRadius: 0 },
+      { label: 'true (hidden)', data: truth, borderColor: text, borderDash: [5, 4], borderWidth: 1, pointRadius: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { labels: { filter: function (i) { return i.text !== 'lower end' && i.text !== 'upper end'; } } } }, scales: { x: { ticks: { maxTicksLimit: 10 }, title: { display: true, text: 'Cycle' } }, y: { min: 0, max: 130, title: { display: true, text: 'Remaining cycles (capped at 125)' } } } } });
+  }
+  function grade(pullCycle, fc, n) {  // same rules as maintenance_env.submit
+    if (pullCycle >= n) return { outcome: 'failed', cost: fc, score: 0 };
+    var waste = n - pullCycle; return { outcome: 'pulled', wasted: waste, cost: waste, score: Math.max(0, 1 - waste / fc) };
+  }
+  function labels() { $('engv').textContent = $('eng').value; $('fcv').textContent = $('fc').value; $('pullv').textContent = $('pull').value; $('thrv').textContent = $('thr').value; }
+  function policyPull(e, kind, N) {
+    for (var c = 1; c <= e.p.length; c++) {
+      if (c < MIN) continue;
+      var i = c - 1; if (kind === 'pt' && e.p[i] <= N) return c; if (kind === 'lb' && e.l[i] <= N) return c; if (kind === 'fx' && c >= 4 * N) return c;
+    }
+    return e.p.length;  // never pulled: fails at its last cycle
+  }
+  $('eng').oninput = function () { labels(); $('res').textContent = ''; $('pres').textContent = ''; draw(); };
+  ['fc', 'pull', 'thr'].forEach(function (id) { $(id).oninput = labels; });
+  $('go').onclick = function () {
+    var e = eng(), n = life(e), p = +$('pull').value, fc = +$('fc').value, r = grade(p, fc, n);
+    $('res').textContent = 'Engine ' + $('eng').value + ' lived ' + n + ' cycles (hidden while you decided). You pulled at cycle ' + p + ': ' + r.outcome + '. Cost ' + r.cost + ', score ' + r.score.toFixed(2) + '.';
+    draw(p < n ? p : null);
+  };
+  $('run').onclick = function () {
+    var e = eng(), n = life(e), p = policyPull(e, $('pol').value, +$('thr').value), fc = +$('fc').value, r = grade(p, fc, n);
+    $('pres').textContent = (r.outcome === 'failed' ? 'The policy never pulled: the engine failed at cycle ' + n + '.' : 'Pulled at cycle ' + p + ' with ' + r.wasted + ' cycles of life left.') + ' Cost ' + r.cost + ', score ' + r.score.toFixed(2) + '.';
+    draw(r.outcome === 'pulled' ? p : null);
+  };
+  $('all').onclick = function () {
+    var kind = $('pol').value, N = +$('thr').value, fc = +$('fc').value, fails = 0, waste = 0, k = 0, sc = 0;
+    Object.keys(D.engines).forEach(function (id) { var e = D.engines[id], n = life(e), p = policyPull(e, kind, N), r = grade(p, fc, n); if (r.outcome === 'failed') fails++; else { waste += r.wasted; k++; } sc += r.score; });
+    $('pres').textContent = 'All 100 engines: ' + fails + ' failures, mean wasted life ' + (k ? (waste / k).toFixed(1) : 'n/a') + ' cycles when pulled, mean score ' + (sc / 100).toFixed(3) + ' (failure cost ' + fc + ').';
+  };
+  var tb = document.querySelector('#tbl tbody'), R = D.results['150'];
+  Object.keys(R).forEach(function (k) { var v = R[k], tr = document.createElement('tr'); [k, v.failures, v.mean_wasted_cycles_when_pulled === null ? '' : v.mean_wasted_cycles_when_pulled, v.mean_score].forEach(function (x) { var td = document.createElement('td'); td.textContent = x; tr.appendChild(td); }); tb.appendChild(tr); });
+  var F = D.frontier;
+  new Chart($('fr'), { type: 'line', data: { labels: F.thresholds, datasets: [
+    { label: 'point estimate rule', data: F.point_estimate.map(function (r) { return r.failures; }), borderColor: accent, backgroundColor: accent, pointRadius: 2 },
+    { label: 'lower end of range rule', data: F.lower_bound.map(function (r) { return r.failures; }), borderColor: '#b35c1e', backgroundColor: '#b35c1e', borderDash: [6, 4], pointRadius: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { x: { title: { display: true, text: 'Threshold N (cycles)' } }, y: { title: { display: true, text: 'Engines that fail (of 100)' } } } } });
+  labels(); draw();
+})();
+</script>
+</body>
+</html>
