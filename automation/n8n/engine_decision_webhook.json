@@ -1,0 +1,13 @@
+{
+  "name": "TrustRUL: engine decision webhook",
+  "nodes": [
+    {"parameters": {"httpMethod": "POST", "path": "engine-decision", "responseMode": "responseNode", "options": {}}, "id": "w1", "name": "Engine reading arrives", "type": "n8n-nodes-base.webhook", "typeVersion": 2, "position": [0, 0], "webhookId": "engine-decision"},
+    {"parameters": {"jsCode": "// Expected body: { engine, cycle, pred_rul, lo, hi }  (from a model service or the TrustRUL artifacts)\nconst b = $input.first().json.body;\nconst PULL_AT = 8; // best safe threshold found in MaintenanceSimEnv: 0 failures in 100 engines, about 8 cycles wasted\nconst ok = ['engine', 'cycle', 'pred_rul', 'lo', 'hi'].every(k => typeof b[k] === 'number');\nif (!ok) return [{ json: { error: 'send numbers: engine, cycle, pred_rul, lo, hi' } }];\nconst action = b.pred_rul <= PULL_AT ? 'PULL' : 'CONTINUE';\nconst review = (b.hi - b.lo) > 40.1 ? 'HUMAN_REVIEW' : 'auto';\nreturn [{ json: { engine: b.engine, cycle: b.cycle, action, review, rule: `pull when predicted remaining life <= ${PULL_AT} cycles`, note: 'simulation-derived rule on simulated engines, not for real maintenance decisions' } }];"}, "id": "w2", "name": "Apply the decision rule", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [240, 0]},
+    {"parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}}, "id": "w3", "name": "Reply", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1, "position": [480, 0]}
+  ],
+  "connections": {
+    "Engine reading arrives": {"main": [[{"node": "Apply the decision rule", "type": "main", "index": 0}]]},
+    "Apply the decision rule": {"main": [[{"node": "Reply", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"}
+}
