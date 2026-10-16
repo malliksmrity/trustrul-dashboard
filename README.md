@@ -1,111 +1,82 @@
 # TrustRUL: engine life prediction that shows how sure it is
 
-**In one sentence:** a neural network estimates how many flights a jet engine has left, and for every estimate it also says how unsure it is and whether a person should take a look.
+**In one sentence:** a neural network estimates how many flights a jet engine has left, and for every estimate it also gives a calibrated margin of error and says whether a person should take a look.
 
-Project page (charts, plain language): `docs/index.html`, served with GitHub Pages once Pages is enabled for the `/docs` folder.
+Live page: `docs/index.html` (GitHub Pages, folder `/docs`). Live engine lookup for Hugging Face Spaces: `space/`. Model card: `reports/MODEL_CARD.md`.
 
-## The question
+This repository also contains the earlier **XGBoost engine-life project** (merged in because it uses the same data).
 
-Can a model give maintenance planners a remaining-life estimate that comes with a margin of error and a "please check this one" flag, instead of a single unexplained number?
+## 1. Problem
 
-## Who could benefit, and how
+Airlines and engine-maintenance companies decide when to pull an engine from service. Fixed intervals waste engine life; running too long risks an unplanned removal. A model that predicts the **remaining useful life (RUL)** helps, but a single number is dangerous: the planner also needs to know **how much to trust it**. The question: can a model give a remaining-life estimate with a margin of error that is actually correct, and a reason for each estimate?
 
-Maintenance planners at airlines or engine service companies could, in principle, use such a tool to decide when to inspect an engine and which predictions to double-check. That is plausible but not tested: the data is simulated.
+Who could use it: maintenance planners in airlines or engine-service companies (plausible, not tested; the data is simulated).
 
-## Data and licence
+## 2. Dataset
 
-- NASA C-MAPSS turbofan simulation, subset FD001 (100 training engines, 100 test engines, one operating condition, one fault type).
-- Source: NASA Prognostics Center of Excellence. Cite: Saxena, A. and Goebel, K. (2008). Public for research use; check the repository terms before reuse.
-- Files: `data/train_FD001.txt`, `data/test_FD001.txt`, `data/RUL_FD001.txt`.
+NASA C-MAPSS turbofan simulation, subset FD001: 100 training engines run to failure (20,631 rows), 100 test engines that stop early, with the true remaining life of each test engine. One operating condition, one fault mode, 21 sensors (14 informative ones kept). Source: NASA Prognostics Center of Excellence, Saxena and Goebel (2008), public for research use (check the repository terms before reuse). Files: `data/`. The true remaining life is capped at 125 cycles, as is common, because an engine far from failure looks like a healthy one.
 
-## How it works
+## 3. How I solved it
 
-1. Read the last 30 cycles of 14 sensor channels (constant sensors are dropped).
-2. A GRU network predicts the remaining cycles. Dropout stays on and the prediction is repeated 50 times, which gives a 5th to 95th percentile range.
-3. Sensor importance comes from the gradient of the output with respect to the inputs.
-4. If the range is in the widest quarter of all test engines, the engine is routed to a human.
+1. Cut each engine's history into windows of 30 cycles over 14 sensors; the target is the remaining life at the window end.
+2. Compare 12 network set-ups (LSTM, GRU, 1D-CNN with attention; windows, dropout, loss, scaling) on 20 held-back engines and pick the best.
+3. Keep dropout switched on at prediction time and repeat the prediction 50 times: the spread gives a margin of error. Gradient saliency names the top sensors. Engines whose range is in the widest quarter go to a human.
+4. Check the claims instead of trusting them: compare with simple baselines, measure how often the "90 percent" range really contains the truth, and check whether the human-review flag picks out the worst predictions.
+5. Fix what failed: calibrate the range with split conformal prediction.
+6. Compare with the earlier XGBoost project on the same truth, and test it three ways.
 
-## Results
+## 4. Findings
 
-Test set: the 100 official test engines. The true remaining life is capped at 125 cycles, as in the notebook. Computed by `python src/baselines_and_checks.py` from the saved predictions, saved in `reports/results.json`.
+- **Error:** the GRU's typical error is 13.47 cycles (C-MAPSS score 354.6) on the 100 test engines. Baselines: always the mean 41.98; ridge regression 20.78; gradient boosting 17.13; XGBoost 17.76.
+- **The stated range was too narrow.** The dropout range holds the truth for 82 of 100 test engines (a retrained GRU: 78), not 90.
+- **Calibration fixes it.** Split conformal prediction on 20 calibration engines gives 89 of 100 (fixed width) and 90 of 100 (width proportional to the model's own spread), at a wider range: 34 cycles on average against 28. The result is uncertain by about 3 points.
+- **The review flag did not isolate bad predictions:** flagged engines had a mean error of 9.46, the others 10.12. A wider range does go with a larger error to some extent (rank correlation 0.31).
+- **How you test matters** (XGBoost): 35.82 with a random row split, 38.15 with whole engines held out, 25.95 on the official test (last reading only, easier). The three numbers cannot be compared with each other.
+- **Explanations:** on the gradient-boosting baseline, SHAP puts sensors 11, 9 and 4 first. `cycle` is the top feature of the XGBoost model (48 percent), and without it the official-test error rises from 25.95 to 33.57.
 
-| Model | RMSE (cycles) | C-MAPSS score (lower is better) |
+## 5. Models used
+
+| Model | Role | Error on test (cycles) |
 |---|---|---|
-| Mean predictor | 41.98 | 33781 |
-| Ridge regression, last reading | 20.78 | 1236 |
-| Gradient boosting, last reading | 17.13 | 917 |
-| GRU with MC dropout (TrustRUL) | **13.47** | **354.6** |
+| Mean predictor | baseline | 41.98 |
+| Ridge regression, last reading | baseline | 20.78 |
+| Gradient boosting, last reading | baseline, conformal and SHAP demo | 17.13 |
+| XGBoost, labels capped at 125 | merged earlier project | 17.76 (vs capped truth) |
+| LSTM, GRU, 1D-CNN + attention | compared on validation engines | best GRU: validation 11.69 |
+| **GRU with Monte Carlo dropout** | main model | **13.47** |
+| GRU + split conformal | calibrated range | coverage 89 to 90 of 100 |
 
-The baselines are an addition: they train on the same 80 engines as the notebook and use only the latest sensor reading. Twelve network set-ups were compared on 20 validation engines (`artifacts/experiments.csv`). The GRU with a window of 30 cycles had the lowest validation RMSE, 11.69.
+## 6. Technical documentation
 
-**Checks of the uncertainty part (new):**
+- Windows of 30 cycles, 14 sensors, standard scaling fit on the 80 training engines, RUL capped at 125, seed 42. Best configuration: GRU, dropout 0.3, MSE loss.
+- Range: 50 dropout passes, 5th to 95th percentile. Review rule: range in the widest quarter of test engines.
+- Conformal (`src/gru_conformal.py`): calibration set = all windows of the 20 validation engines; fixed width uses the 90th percentile of absolute errors, normalised uses the 90th percentile of error divided by the dropout band. The guarantee assumes exchangeable calibration and test points, which is only approximate here (calibration uses all cycles of the validation engines, the test uses each engine's last cycle).
+- Retrained model: not bit-identical to the saved one (13.72 against 13.47).
+- Baselines: `src/baselines_and_checks.py` (needs only scikit-learn); XGBoost: `src/rul_xgboost_baselines.py` (grouped CV by engine, official test set, five seeds: RMSE 18.84 ± 0.39 with row and column subsampling); SHAP and MLflow: `src/conformal_shap_mlflow.py`.
+- EU AI Act note in the model card: the coursework notebook called the system high-risk under Article 6(1); my later re-reading is that civil-aviation law sits in Annex I Section B, where only some AI Act articles apply directly, so this is **unverified**. Ask a qualified person.
+- Limits: simulated data, one operating condition and fault mode, capped target, 100 test engines, flag not shown to help, the saved `scaler.pkl` is a pickle (load only your own).
+- Reproduce: `pip install -r requirements.txt`; `python src/baselines_and_checks.py`; extras `pip install -r requirements-extra.txt` then `python src/rul_xgboost_baselines.py` and `python src/conformal_shap_mlflow.py`; with TensorFlow (`requirements-train.txt`) `python src/gru_conformal.py` (about 15 minutes on CPU) and `python src/export_artifacts.py`.
 
-- The "90 percent" range contained the true value for 82 of 100 engines. It is a bit too narrow.
-- The 25 engines flagged for human review have an average error of 9.46 cycles. The 75 others have 10.12. So the flag did not isolate the worst predictions in this test. The width of the range and the error are positively related (Spearman 0.31).
+## 7. Output
 
-**Calibrated range, explanations, tracking (added in the second cleanup round)**
+- Static page with six charts, the calibration comparison and an engine lookup: `docs/index.html`.
+- Per-engine transparency record: predicted RUL, range, top sensors, review flag: `artifacts/transparency_record.csv`.
+- Reports: `reports/results.json`, `reports/gru_conformal.json`, `reports/rul_xgboost.json`, `reports/conformal_shap.json`, `reports/MODEL_CARD.md`.
+- Live lookup app: `space/app.py` (Gradio).
 
-`python src/conformal_shap_mlflow.py` (needs `requirements-extra.txt`; reports in `reports/conformal_shap.json`):
+## 8. Deployment
 
-- Split conformal prediction on the gradient-boosting baseline, calibrated on the 20 validation engines: the 90 percent range has half-width 29.8 cycles and covers 89 of 100 test engines (the GRU's saved range: 82). The result is uncertain by about 3 points. It applies to the baseline. Doing the same for the GRU needs retraining it first (not done).
-- SHAP (TreeExplainer) on the baseline: sensors 11, 9 and 4 contribute most on average.
-- The run is logged with MLflow to a local SQLite file (`mlflow.db`, git-ignored). View with `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
-- A model card with an EU AI Act note is in `reports/MODEL_CARD.md`. The note says the notebook's high-risk claim is unverified.
+| What | How | Status |
+|---|---|---|
+| Static page | GitHub Pages, folder `/docs` | needs enabling |
+| Live lookup | Hugging Face Space (Gradio), folder `space/`, steps in `space/README.md` | not deployed (needs your account) |
+| Experiment tracking | MLflow to a local SQLite file | works locally |
+| Container | `Dockerfile` runs the baselines script | written, not built |
+| CI | `.github/workflows/ci.yml` | written, not yet run on GitHub |
+| Process | `PROCESS.md` | plan, not past experience |
 
-## Limitations
+## Coursework and extensions
 
-- Simulated data, a single operating condition and fault type, 100 test engines only.
-- True remaining life is capped at 125, so scores are not comparable with papers that use uncapped targets.
-- Baselines were not tuned. The GRU configuration was picked on validation data, not the test engines.
-- The network was not retrained for this cleanup (TensorFlow is large). `src/export_artifacts.py` retrains it and rewrites `artifacts/`. The numbers here are computed from the saved artifacts.
-- The saved `scaler.pkl` is a Python pickle. Only load pickles you created yourself.
+Coursework (module M507 Methods of Prediction, Gisma): the notebook `notebooks/TrustRUL.ipynb`. Extended afterwards: baselines, coverage and flag checks, conformal calibration of the GRU, SHAP and MLflow, the merged XGBoost evaluation, model card, static page and Space app. The earlier repository `predictive-maintenance-rul` is merged into this one and can be archived. Your college has approved publishing coursework (results pending).
 
-## How to run
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-python src/baselines_and_checks.py     # baselines, coverage check, writes docs/data.js
-# optional, needs TensorFlow, about 4 minutes on CPU:
-pip install -r requirements-train.txt
-python src/export_artifacts.py
-```
-
-## What is coursework and what I extended
-
-- Coursework (module M507 Methods of Prediction, Gisma): the notebook `notebooks/TrustRUL.ipynb` with the model comparison, MC dropout and the transparency record.
-- Extended afterwards: the first dashboard, and in this cleanup the baselines, the interval coverage check, the flag check and the static page. The Streamlit app is in `_archive/`.
-- Check your university's rules before publishing coursework.
-
-## For technical readers
-
-- Window 30, standard scaling fit on the 80 training engines, RUL target capped at 125, seed 42.
-- Best configuration: GRU, dropout 0.3, MSE loss. Test RMSE 13.47 and score 354.6 (the saved `artifacts/meta.json` shows 354, truncated).
-- Transparency record per engine: predicted RUL, MC-dropout 5th and 95th percentile, top three sensors by input-gradient saliency, review flag. See `artifacts/transparency_record.csv`.
-- The notebook argues that a system like this would count as high-risk under the EU AI Act. That is the author's reading for the coursework, not legal advice.
-
-## Repository layout
-
-```
-data/        C-MAPSS FD001 files
-notebooks/   TrustRUL.ipynb (executed notebook)
-src/         trustrul_core.py, export_artifacts.py, baselines_and_checks.py
-artifacts/   saved predictions, experiment table, model, scaler
-reports/     results.json
-docs/        static project page
-_archive/    moved files: Streamlit app and its config, original README
-```
-
-Smrity Mallik, MSc AI and Data Science (Gisma, Berlin), B.Eng. Mechanical Engineering.
-GitHub: github.com/malliksmrity. LinkedIn: linkedin.com/in/smritymallik.
-
-## Process and automation
-
-- `PROCESS.md`: backlog, definition of done and sprint rhythm for the next work (a plan, not past experience).
-- `.github/workflows/ci.yml`: GitHub Actions check (written here, not yet run on GitHub).
-- `Dockerfile`: container for the main script (not built or tested yet).
-
-## Live model UI (Hugging Face Space)
-
-`space/` is a ready-to-deploy Gradio app for a Hugging Face Space. Instructions in `space/README.md`. Not deployed yet: it needs your Hugging Face account.
+Smrity Mallik, MSc AI and Data Science (Gisma, Berlin), B.Eng. Mechanical Engineering. GitHub: github.com/malliksmrity. LinkedIn: linkedin.com/in/smritymallik.
