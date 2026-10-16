@@ -54,7 +54,7 @@ NASA C-MAPSS turbofan simulation, subset FD001: 100 training engines run to fail
 - Range: 50 dropout passes, 5th to 95th percentile. Review rule: range in the widest quarter of test engines.
 - Conformal (`src/gru_conformal.py`): calibration set = all windows of the 20 validation engines; fixed width uses the 90th percentile of absolute errors, normalised uses the 90th percentile of error divided by the dropout band. The guarantee assumes exchangeable calibration and test points, which is only approximate here (calibration uses all cycles of the validation engines, the test uses each engine's last cycle).
 - Retrained model: not bit-identical to the saved one (13.72 against 13.47).
-- Baselines: `src/baselines_and_checks.py` (needs only scikit-learn); XGBoost: `src/rul_xgboost_baselines.py` (grouped CV by engine, official test set, five seeds: RMSE 18.84 Â± 0.39 with row and column subsampling); SHAP and MLflow: `src/conformal_shap_mlflow.py`.
+- Baselines: `src/baselines_and_checks.py` (needs only scikit-learn); XGBoost: `src/rul_xgboost_baselines.py` (grouped CV by engine, official test set, five seeds: RMSE 18.84 Ã‚Â± 0.39 with row and column subsampling); SHAP and MLflow: `src/conformal_shap_mlflow.py`.
 - EU AI Act note in the model card: the coursework notebook called the system high-risk under Article 6(1); my later re-reading is that civil-aviation law sits in Annex I Section B, where only some AI Act articles apply directly, so this is **unverified**. Ask a qualified person.
 - Limits: simulated data, one operating condition and fault mode, capped target, 100 test engines, flag not shown to help, the saved `scaler.pkl` is a pickle (load only your own).
 - Reproduce: `pip install -r requirements.txt`; `python src/baselines_and_checks.py`; extras `pip install -r requirements-extra.txt` then `python src/rul_xgboost_baselines.py` and `python src/conformal_shap_mlflow.py`; with TensorFlow (`requirements-train.txt`) `python src/gru_conformal.py` (about 15 minutes on CPU) and `python src/export_artifacts.py`.
@@ -77,7 +77,7 @@ NASA C-MAPSS turbofan simulation, subset FD001: 100 training engines run to fail
 | Static page | GitHub Pages, folder `/docs` | needs enabling |
 | Live lookup | Hugging Face Space (Gradio), folder `space/`, steps in `space/README.md` | not deployed (needs your account) |
 | Experiment tracking | MLflow to a local SQLite file | works locally |
-| Container | `Dockerfile` runs the baselines script | written, not built |
+| Container | `Dockerfile` runs the baselines script | built and run (Docker 29.8, 689 MB image); output matches reports/results.json: GRU RMSE 13.47, gradient boosting 17.13, interval coverage 0.82 |
 | CI | `.github/workflows/ci.yml` | written, not yet run on GitHub |
 | Process | `PROCESS.md` | plan, not past experience |
 
