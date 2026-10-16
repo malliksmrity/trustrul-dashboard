@@ -1,0 +1,109 @@
+{
+  "seed": 42,
+  "rul_cap": 125,
+  "n_train_rows": 20631,
+  "n_train_engines": 100,
+  "results": [
+    {
+      "model": "XGBoost (original)",
+      "evaluation": "A. random row split",
+      "rmse": 35.82,
+      "mae": 25.52,
+      "note": "rows of the same engine appear in both train and test"
+    },
+    {
+      "model": "Mean predictor",
+      "evaluation": "B. grouped CV by engine",
+      "rmse": 68.88,
+      "mae": 56.86,
+      "note": ""
+    },
+    {
+      "model": "Linear regression (cycle only)",
+      "evaluation": "B. grouped CV by engine",
+      "rmse": 46.65,
+      "mae": 36.28,
+      "note": ""
+    },
+    {
+      "model": "Linear regression (all features)",
+      "evaluation": "B. grouped CV by engine",
+      "rmse": 40.69,
+      "mae": 31.16,
+      "note": ""
+    },
+    {
+      "model": "XGBoost (all features)",
+      "evaluation": "B. grouped CV by engine",
+      "rmse": 38.15,
+      "mae": 26.89,
+      "note": ""
+    },
+    {
+      "model": "XGBoost (without cycle)",
+      "evaluation": "B. grouped CV by engine",
+      "rmse": 43.14,
+      "mae": 30.55,
+      "note": ""
+    },
+    {
+      "model": "Mean predictor",
+      "evaluation": "C. official test set (100 engines)",
+      "rmse": 52.62,
+      "mae": 40.88,
+      "note": "",
+      "rmse_vs_capped_truth": 52.14
+    },
+    {
+      "model": "Linear regression (all features)",
+      "evaluation": "C. official test set (100 engines)",
+      "rmse": 31.25,
+      "mae": 25.98,
+      "note": "",
+      "rmse_vs_capped_truth": 31.5
+    },
+    {
+      "model": "XGBoost (all features)",
+      "evaluation": "C. official test set (100 engines)",
+      "rmse": 25.95,
+      "mae": 19.14,
+      "note": "",
+      "rmse_vs_capped_truth": 26.23
+    },
+    {
+      "model": "XGBoost (without cycle)",
+      "evaluation": "C. official test set (100 engines)",
+      "rmse": 33.57,
+      "mae": 24.24,
+      "note": "",
+      "rmse_vs_capped_truth": 34.15
+    },
+    {
+      "model": "XGBoost (RUL capped at 125)",
+      "evaluation": "C. official test set (100 engines)",
+      "rmse": 18.93,
+      "mae": 14.43,
+      "note": "",
+      "rmse_vs_capped_truth": 17.76
+    }
+  ],
+  "robustness": {
+    "model": "XGBoost (RUL capped at 125) + subsample 0.8",
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "rmse_per_seed": [
+      19.23,
+      19.29,
+      18.2,
+      18.75,
+      18.76
+    ],
+    "rmse_mean": 18.84,
+    "rmse_std": 0.39
+  }
+}
