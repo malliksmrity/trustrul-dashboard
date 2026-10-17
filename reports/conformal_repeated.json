@@ -1,0 +1,62 @@
+{
+  "splits": 3,
+  "target": 0.9,
+  "test_engines": 100,
+  "per_split": [
+    {
+      "seed": 0,
+      "test_rmse": 13.93,
+      "A_cov": 0.8,
+      "B_cov": 0.89,
+      "C_cov": 0.91,
+      "A_w": 25.036392380714418,
+      "B_w": 36.97378158569336,
+      "C_w": 34.566986083984375
+    },
+    {
+      "seed": 1,
+      "test_rmse": 14.52,
+      "A_cov": 0.83,
+      "B_cov": 0.88,
+      "C_cov": 0.89,
+      "A_w": 28.100564700007443,
+      "B_w": 35.8564453125,
+      "C_w": 37.14191436767578
+    },
+    {
+      "seed": 2,
+      "test_rmse": 14.61,
+      "A_cov": 0.75,
+      "B_cov": 0.86,
+      "C_cov": 0.88,
+      "A_w": 27.89910554742812,
+      "B_w": 43.526737213134766,
+      "C_w": 43.376827239990234
+    }
+  ],
+  "summary": {
+    "A_mc_dropout": {
+      "coverage_mean": 0.793,
+      "coverage_sd": 0.04,
+      "coverage_min": 0.75,
+      "coverage_max": 0.83,
+      "width_mean": 27.0
+    },
+    "B_split_conformal": {
+      "coverage_mean": 0.877,
+      "coverage_sd": 0.015,
+      "coverage_min": 0.86,
+      "coverage_max": 0.89,
+      "width_mean": 38.8
+    },
+    "C_normalised_conformal": {
+      "coverage_mean": 0.893,
+      "coverage_sd": 0.015,
+      "coverage_min": 0.88,
+      "coverage_max": 0.91,
+      "width_mean": 38.4
+    }
+  },
+  "test_rmse_mean": 14.35,
+  "test_rmse_sd": 0.37
+}
